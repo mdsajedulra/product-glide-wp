@@ -1,0 +1,41 @@
+# Builds product-glide.zip and publishes a GitHub Release when a vX.Y.Z tag is pushed.
+# Every WordPress site running Product Glide (with this repo + a read token in
+# Settings → Updates) then shows "Update available" on its Plugins page.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the plugin version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          HEADER=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9.]+' product-glide.php)
+          CONST=$(grep -m1 -oP "define\(\s*'PG_VERSION',\s*'\K[0-9.]+" product-glide.php)
+          echo "tag=$TAG header=$HEADER const=$CONST"
+          [ "$TAG" = "$HEADER" ] && [ "$TAG" = "$CONST" ] || { echo "::error::Tag v$TAG does not match the version in product-glide.php"; exit 1; }
+
+      - name: Build product-glide.zip
+        run: |
+          mkdir -p build/product-glide
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'tools' --exclude 'build' \
+            --exclude 'README.md' --exclude '.gitignore' ./ build/product-glide/
+          cd build && zip -qr ../product-glide.zip product-glide
+          unzip -l ../product-glide.zip | tail -1
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
+          [ -n "$NOTES" ] || NOTES="Product Glide $GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" product-glide.zip --title "Product Glide $GITHUB_REF_NAME" --notes "$NOTES"
