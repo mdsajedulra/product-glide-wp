@@ -1,30 +1,51 @@
-# Builds product-glide.zip and publishes a GitHub Release when a vX.Y.Z tag is pushed.
+# Publishes a GitHub Release (tag vX.Y.Z + product-glide.zip) whenever the version in
+# product-glide.php changes on main — or a vX.Y.Z tag is pushed, or it is run by hand.
 # Every WordPress site running Product Glide (with this repo + a read token in
 # Settings → Updates) then shows "Update available" on its Plugins page.
 name: Release
 
 on:
   push:
+    branches: [main]
+    paths: ['product-glide.php', '.github/workflows/release.yml']
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
-      - name: Check the tag matches the plugin version
+      - name: Read the plugin version
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
           HEADER=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9.]+' product-glide.php)
           CONST=$(grep -m1 -oP "define\(\s*'PG_VERSION',\s*'\K[0-9.]+" product-glide.php)
-          echo "tag=$TAG header=$HEADER const=$CONST"
-          [ "$TAG" = "$HEADER" ] && [ "$TAG" = "$CONST" ] || { echo "::error::Tag v$TAG does not match the version in product-glide.php"; exit 1; }
+          echo "header=$HEADER const=$CONST"
+          [ "$HEADER" = "$CONST" ] || { echo "::error::Version header ($HEADER) and PG_VERSION ($CONST) differ"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$HEADER" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $HEADER"; exit 1
+          fi
+          echo "tag=v$HEADER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$HEADER" >/dev/null 2>&1; then
+            echo "Release v$HEADER already exists — nothing to do."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build product-glide.zip
+        if: steps.ver.outputs.skip != '1'
         run: |
           mkdir -p build/product-glide
           rsync -a --exclude '.git' --exclude '.github' --exclude 'tools' --exclude 'build' \
@@ -33,9 +54,15 @@ jobs:
           unzip -l ../product-glide.zip | tail -1
 
       - name: Publish release
+        if: steps.ver.outputs.skip != '1'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
-          [ -n "$NOTES" ] || NOTES="Product Glide $GITHUB_REF_NAME"
-          gh release create "$GITHUB_REF_NAME" product-glide.zip --title "Product Glide $GITHUB_REF_NAME" --notes "$NOTES"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            NOTES=$(git tag -l --format='%(contents)' "$TAG")
+          else
+            NOTES=$(git log -1 --format=%b | sed '/^Co-Authored-By:/d;/^Claude-Session:/d')
+          fi
+          [ -n "$(echo "$NOTES" | tr -d '[:space:]')" ] || NOTES="Product Glide $TAG"
+          gh release create "$TAG" product-glide.zip --target "$GITHUB_SHA" --title "Product Glide $TAG" --notes "$NOTES"
