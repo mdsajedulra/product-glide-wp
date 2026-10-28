@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_Settings {
 
-	const SECRET_KEYS = array( 'sf_api_key', 'sf_secret_key', 'wa_token', 'or_key', 'gh_token' );
+	const SECRET_KEYS = array( 'sf_api_key', 'sf_secret_key', 'wa_token', 'or_key' );
 
 	public static function init() {
 		add_action( 'admin_post_pg_save_settings', array( __CLASS__, 'save' ) );
@@ -27,7 +27,6 @@ class PG_Settings {
 			'inv_template'        => 'classic',
 			// Updates (GitHub releases).
 			'gh_repo'             => 'mdsajedulra/product-glide-wp',
-			'gh_token'            => '',
 			'inv_email'           => '',
 			'inv_logo'            => '',
 			'inv_company'         => '',
@@ -276,7 +275,6 @@ class PG_Settings {
 						}
 						PG_Updater::render_status();
 						self::field_text( 'gh_repo', __( 'GitHub repository (owner/name)', 'product-glide' ), $s );
-						self::field_secret( 'gh_token', __( 'GitHub token (fine-grained, read-only access to this repository: Contents → Read)', 'product-glide' ), $s );
 						echo '<p class="pg-muted">' . esc_html__( 'When a new release is published on GitHub, this site shows "Update available" on the Plugins page within a few hours (or right away with "Check now"). Press "Update now" to install it — settings and data are kept.', 'product-glide' ) . '</p>';
 						break;
 					case 'profit':

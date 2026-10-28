@@ -10,13 +10,9 @@ tools/release.sh 1.5.1 "Short note about what changed"
 ```
 
 This bumps the version, commits and pushes to `main`. The **Release** GitHub Action sees the
-new version, creates tag `v1.5.1`, builds `product-glide.zip` and attaches it to a GitHub Release. Each site (Settings → Updates:
-repository + read-only token) then shows **Update available** on the Plugins page.
+new version, creates tag `v1.5.1`, builds `product-glide.zip` and attaches it to a GitHub Release. Each site then shows **Update available** on the Plugins page.
 
-## Token for the sites
+## Sites need no token
 
-GitHub → Settings → Developer settings → Fine-grained tokens → *Generate new token*:
-- Repository access: **Only select repositories** → this repo
-- Permissions → Repository → **Contents: Read-only**
-
-Paste it in each site: Product Glide → Settings → Updates → GitHub token.
+The repository is public, so every site with Product Glide installed checks the latest
+Release on its own (cached for 6 hours; Settings → Updates → *Check now* forces a check).

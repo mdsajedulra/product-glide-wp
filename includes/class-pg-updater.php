@@ -2,11 +2,11 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Updates from a private GitHub repo's Releases.
+ * Updates from the public GitHub repo's Releases.
  *
  * Each release is tagged vX.Y.Z and carries the plugin zip (product-glide.zip,
- * containing the product-glide/ folder) as an asset. Every site that has the
- * repo + a read-only token in Settings → Updates sees "Update available" on the
+ * containing the product-glide/ folder) as an asset. The repo is public, so no
+ * token is needed: every site sees "Update available" on the
  * Plugins page and installs it with one click.
  */
 class PG_Updater {
@@ -29,19 +29,12 @@ class PG_Updater {
 		return preg_match( '#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $r ) ? $r : '';
 	}
 
-	private static function token() {
-		return trim( (string) PG_Settings::get( 'gh_token' ) );
-	}
-
 	private static function headers( $accept = 'application/vnd.github+json' ) {
 		$h = array(
 			'Accept'               => $accept,
 			'User-Agent'           => 'product-glide-updater',
 			'X-GitHub-Api-Version' => '2022-11-28',
 		);
-		if ( self::token() ) {
-			$h['Authorization'] = 'Bearer ' . self::token();
-		}
 		return $h;
 	}
 
@@ -72,15 +65,15 @@ class PG_Updater {
 		$code = wp_remote_retrieve_response_code( $res );
 		$body = json_decode( wp_remote_retrieve_body( $res ), true );
 		if ( 200 !== $code || ! is_array( $body ) ) {
-			$msg = 404 === $code ? __( 'Repository or release not found — check the repo name and that the token can read it.', 'product-glide' )
-				: ( 401 === $code ? __( 'GitHub rejected the token.', 'product-glide' ) : sprintf( 'GitHub HTTP %d', $code ) );
+			$msg = 404 === $code ? __( 'Repository or release not found — check the repository name and that the repository is public.', 'product-glide' )
+				: ( 403 === $code ? __( 'GitHub is limiting requests right now — try again in an hour.', 'product-glide' ) : sprintf( 'GitHub HTTP %d', $code ) );
 			set_site_transient( self::CACHE . '_err', $msg, HOUR_IN_SECONDS );
 			return new WP_Error( 'pg_upd_http', $msg );
 		}
 		$asset = '';
 		foreach ( (array) ( isset( $body['assets'] ) ? $body['assets'] : array() ) as $a ) {
 			if ( isset( $a['name'], $a['url'] ) && preg_match( '/\.zip$/i', $a['name'] ) ) {
-				$asset = $a['url']; // API url; downloaded with the token in download().
+				$asset = $a['url']; // API url; fetched in download().
 				if ( 'product-glide.zip' === $a['name'] ) {
 					break;
 				}
@@ -154,8 +147,8 @@ class PG_Updater {
 	}
 
 	/**
-	 * Private release assets need the token, and GitHub answers with a redirect to
-	 * a signed URL that must be fetched WITHOUT the token — so we download it ourselves.
+	 * Release assets are served from the API URL with a redirect to a signed
+	 * download URL — follow it ourselves so the zip arrives intact.
 	 */
 	public static function download( $reply, $package, $upgrader ) {
 		if ( false !== $reply || ! is_string( $package ) || ! self::repo() || 0 !== strpos( $package, 'https://api.github.com/repos/' . self::repo() . '/releases/assets/' ) ) {
@@ -227,7 +220,7 @@ class PG_Updater {
 		echo '<div class="pg-field"><label>' . esc_html__( 'Status', 'product-glide' ) . '</label><div class="pg-upd-status">';
 		echo '<div>' . esc_html__( 'Installed version:', 'product-glide' ) . ' <b>' . esc_html( PG_VERSION ) . '</b></div>';
 		if ( null === $rel ) {
-			echo '<div class="pg-muted">' . esc_html__( 'Add the repository and token below, save, then press "Check now".', 'product-glide' ) . '</div>';
+			echo '<div class="pg-muted">' . esc_html__( 'Add the repository below, save, then press "Check now".', 'product-glide' ) . '</div>';
 		} elseif ( is_wp_error( $rel ) ) {
 			echo '<div class="pg-alert pg-alert-bad" style="margin:6px 0 0">' . esc_html( $rel->get_error_message() ) . '</div>';
 		} else {
