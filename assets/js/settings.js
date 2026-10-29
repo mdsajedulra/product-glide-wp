@@ -3,6 +3,19 @@
 	'use strict';
 	var A = window.PGA, esc = A.esc;
 
+	var odBtn = document.getElementById('pg-od-import');
+	if (odBtn) {
+		odBtn.addEventListener('click', function () {
+			var out = document.getElementById('pg-od-import-out');
+			A.busy(odBtn, true);
+			A.ajax('pg_leads_import_od', {}).then(function (d) {
+				out.textContent = d.message + (d.left ? ' (' + d.left + ' left — press again)' : '');
+				A.toast(d.message, 'ok');
+				if (!d.left) { odBtn.remove(); }
+			}).catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy(odBtn, false); });
+		});
+	}
+
 	var pick = document.getElementById('pg-pick-logo');
 	if (pick && window.wp && window.wp.media) {
 		pick.addEventListener('click', function () {

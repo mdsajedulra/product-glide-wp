@@ -9,6 +9,7 @@
 		courier:   { label: 'Sent to courier', short: 'Courier', cls: 'c-courier' },
 		confirmed: { label: 'Confirmed', short: 'Confirmed', cls: 'c-confirmed' },
 		created:   { label: 'Created order', short: 'Created', cls: 'c-created' },
+		recovered: { label: 'Recovered incomplete order', short: 'Recovered', cls: 'c-confirmed' },
 		cancelled: { label: 'Cancelled', short: 'Cancelled', cls: 'c-cancelled' },
 		edited:    { label: 'Edited order', short: 'Edited', cls: 'c-edited' },
 		status:    { label: 'Changed status', short: 'Status', cls: 'c-status' },
@@ -111,7 +112,7 @@
 						}).join('') +
 					'</div>' +
 					'<div class="pg-tm-sub">' +
-						['edited', 'status', 'note', 'printed'].map(function (k) { return ACT[k].short + ' <b>' + n(a[k]) + '</b>'; }).join(' · ') +
+						['recovered', 'edited', 'status', 'note', 'printed'].map(function (k) { return ACT[k].short + ' <b>' + n(a[k] || 0) + '</b>'; }).join(' · ') +
 					'</div>' +
 					spark(p.days) + outcomeBar(p.outcome)) +
 				'<span class="pg-tm-more">' + (idle ? '' : 'View orders & timeline →') + '</span>' +

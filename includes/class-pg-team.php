@@ -5,7 +5,7 @@ defined( 'ABSPATH' ) || exit;
  * Staff performance: logs what each Order Manager / admin does to orders
  * and reports it per person and per day (admin only).
  *
- * Actions: created, confirmed, courier, cancelled, status, edited, note, printed.
+ * Actions: created, recovered, confirmed, courier, cancelled, status, edited, note, printed.
  */
 class PG_Team {
 
@@ -14,6 +14,7 @@ class PG_Team {
 
 	const LABELS = array(
 		'created'   => 'Created order',
+		'recovered' => 'Recovered incomplete order',
 		'confirmed' => 'Confirmed',
 		'courier'   => 'Sent to courier',
 		'cancelled' => 'Cancelled',

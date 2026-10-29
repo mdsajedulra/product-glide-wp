@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_Admin {
 
-	const PAGES = array( 'product-glide', 'pg-packages', 'pg-ocr', 'pg-profit', 'pg-steadfast', 'pg-team', 'pg-settings' );
+	const PAGES = array( 'product-glide', 'pg-leads', 'pg-packages', 'pg-ocr', 'pg-profit', 'pg-steadfast', 'pg-team', 'pg-settings' );
 
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
@@ -19,6 +19,8 @@ class PG_Admin {
 		$cap = PG_App::CAP;
 		add_menu_page( 'Product Glide', 'Product Glide', $cap, 'product-glide', array( __CLASS__, 'page_orders' ), 'dashicons-airplane', 56 );
 		add_submenu_page( 'product-glide', __( 'Orders', 'product-glide' ), __( 'Orders', 'product-glide' ), $cap, 'product-glide', array( __CLASS__, 'page_orders' ) );
+		$n = PG_Leads::enabled() ? (int) PG_Leads::badge_count() : 0;
+		add_submenu_page( 'product-glide', __( 'Incomplete Orders', 'product-glide' ), __( 'Incomplete Orders', 'product-glide' ) . ( $n ? ' <span class="awaiting-mod">' . $n . '</span>' : '' ), $cap, 'pg-leads', array( __CLASS__, 'page_leads' ) );
 		add_submenu_page( 'product-glide', __( 'Package Builder', 'product-glide' ), __( 'Package Builder', 'product-glide' ), $cap, 'pg-packages', array( __CLASS__, 'page_packages' ) );
 		add_submenu_page( 'product-glide', __( 'Screenshot Order', 'product-glide' ), __( 'Screenshot Order', 'product-glide' ), $cap, 'pg-ocr', array( __CLASS__, 'page_ocr' ) );
 		add_submenu_page( 'product-glide', __( 'Profit & Stock', 'product-glide' ), __( 'Profit & Stock', 'product-glide' ), 'manage_options', 'pg-profit', array( __CLASS__, 'page_profit' ) );
@@ -130,6 +132,12 @@ class PG_Admin {
 				wp_enqueue_script( 'pg-orders', PG_URL . 'assets/js/orders.js', array( 'pg-app', 'pg-invoice-jpg', 'pg-ocr', 'pg-product-picker' ), $v, true );
 				$handles = array( 'jsbarcode', 'pg-app', 'pg-invoice-jpg', 'pg-order-form', 'pg-product-picker', 'pg-ocr', 'pg-orders' );
 				break;
+			case 'pg-leads':
+				wp_enqueue_script( 'pg-product-picker', PG_URL . 'assets/js/product-picker.js', array( 'pg-app' ), $v, true );
+				wp_enqueue_script( 'pg-leads', PG_URL . 'assets/js/leads.js', array( 'pg-app', 'pg-product-picker' ), $v, true );
+				wp_localize_script( 'pg-leads', 'PG_LEADS', array( 'tabs' => PG_Leads::tabs(), 'idle' => PG_Leads::idle_minutes(), 'enabled' => PG_Leads::enabled(), 'settingsUrl' => admin_url( 'admin.php?page=pg-settings&tab=leads' ) ) );
+				$handles = array( 'pg-app', 'pg-product-picker', 'pg-leads' );
+				break;
 			case 'pg-packages':
 				wp_enqueue_script( 'pg-order-form', PG_URL . 'assets/js/order-form.js', array( 'pg-app' ), $v, true );
 				wp_enqueue_script( 'pg-packages', PG_URL . 'assets/js/packages.js', array( 'pg-app', 'pg-order-form' ), $v, true );
@@ -207,6 +215,12 @@ class PG_Admin {
 		</div>
 		<?php
 		echo '</div>';
+	}
+
+	public static function page_leads() {
+		echo '<div class="pg-wrap" id="pg-leads">';
+		self::header( __( 'Incomplete Orders', 'product-glide' ) );
+		echo '<div id="pg-leads-root"></div></div>';
 	}
 
 	public static function page_packages() {

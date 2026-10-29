@@ -54,6 +54,17 @@ class PG_Settings {
 			// AI / OCR (OpenRouter).
 			'or_key'              => '',
 			'or_model'            => '',
+			// Incomplete orders + checkout guard.
+			'lead_enabled'        => 1,
+			'lead_minutes'        => 10,
+			'lead_keep_days'      => 365,
+			'guard_bd_phone'      => 1,
+			'block_repeat'        => 0,
+			'block_max'           => 1,
+			'block_hours'         => 24,
+			'block_message'       => 'আপনি %order_date% %order_time% সময়ে একটি অর্ডার করেছেন (অর্ডার নম্বর %order_number%, অবস্থা: %order_status%)। একই নম্বর থেকে %hours% ঘণ্টার মধ্যে আবার অর্ডার করা যাচ্ছে না। নতুন কিছু লাগলে কল করুন: %hotline%',
+			'blocklist'           => '',
+			'block_list_message'  => 'দুঃখিত, এই নম্বর থেকে এই মুহূর্তে অর্ডার নেওয়া যাচ্ছে না। অর্ডার করতে কল করুন: %hotline%',
 			// Profit.
 			'fallback_delivery'   => 70,
 			'fallback_return'     => 70,
@@ -99,12 +110,12 @@ class PG_Settings {
 			$size                 = sanitize_key( $in['inv_page_size'] );
 			$new['inv_page_size'] = isset( PG_Invoice::sizes()[ $size ] ) ? $size : 'a4';
 		}
-		foreach ( array( 'shop_address', 'invoice_footer', 'inv_address' ) as $k ) {
+		foreach ( array( 'shop_address', 'invoice_footer', 'inv_address', 'block_message', 'blocklist', 'block_list_message' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = sanitize_textarea_field( $in[ $k ] );
 			}
 		}
-		foreach ( array( 'items_per_slip', 'fraud_cache_hours' ) as $k ) {
+		foreach ( array( 'items_per_slip', 'fraud_cache_hours', 'lead_minutes', 'lead_keep_days', 'block_max', 'block_hours' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
@@ -126,6 +137,7 @@ class PG_Settings {
 			'steadfast' => array( 'sf_item_desc' ),
 			'fraud'     => array( 'fraud_auto' ),
 			'whatsapp'  => array( 'wa_auto' ),
+			'leads'     => array( 'lead_enabled', 'guard_bd_phone', 'block_repeat' ),
 		);
 		if ( isset( $checkbox_by_section[ $section ] ) ) {
 			foreach ( $checkbox_by_section[ $section ] as $k ) {
@@ -169,6 +181,7 @@ class PG_Settings {
 			'whatsapp'  => __( 'WhatsApp', 'product-glide' ),
 			'ai'        => __( 'AI / OCR', 'product-glide' ),
 			'profit'    => __( 'Profit', 'product-glide' ),
+			'leads'     => __( 'Incomplete & Checkout', 'product-glide' ),
 			'updates'   => __( 'Updates', 'product-glide' ),
 		);
 		if ( ! isset( $tabs[ $tab ] ) ) {
@@ -260,6 +273,32 @@ class PG_Settings {
 						<div class="pg-field"><label for="pg-inv_address"><?php esc_html_e( 'Address', 'product-glide' ); ?></label><textarea id="pg-inv_address" name="inv_address" rows="3" placeholder="<?php echo esc_attr( $auto['address'] ); ?>"><?php echo esc_textarea( $s['inv_address'] ); ?></textarea></div>
 						<?php
 						self::field_textarea( 'invoice_footer', __( 'Invoice footer text', 'product-glide' ), $s );
+						break;
+					case 'leads':
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Incomplete orders', 'product-glide' ) . '</h3>';
+						self::field_check( 'lead_enabled', __( 'Save checkout details when a customer types a valid mobile number but does not place the order', 'product-glide' ), $s );
+						self::field_number( 'lead_minutes', __( 'Count as incomplete after this many minutes without typing', 'product-glide' ), $s );
+						self::field_number( 'lead_keep_days', __( 'Delete entries older than (days)', 'product-glide' ), $s );
+						echo '<p class="pg-muted">' . esc_html__( 'Nothing is saved without a valid Bangladeshi mobile number, and password / card fields are never saved. When the customer completes the order themselves, the entry is marked "Ordered by customer" automatically.', 'product-glide' ) . '</p>';
+						$od = PG_Leads::od_table() ? PG_Leads::od_pending() : -1;
+						if ( $od >= 0 ) {
+							echo '<div class="pg-field"><label>' . esc_html__( 'Order Detect plugin data', 'product-glide' ) . '</label>';
+							if ( $od > 0 ) {
+								echo '<p class="pg-muted">' . esc_html( sprintf( /* translators: count */ __( '%d incomplete orders from Order Detect have not been copied yet.', 'product-glide' ), $od ) ) . '</p><button type="button" class="pg-btn" id="pg-od-import">' . esc_html__( 'Import from Order Detect', 'product-glide' ) . '</button> <span class="pg-muted" id="pg-od-import-out"></span>';
+							} else {
+								echo '<p class="pg-muted">' . esc_html__( 'Everything from Order Detect is already imported.', 'product-glide' ) . '</p>';
+							}
+							echo '</div>';
+						}
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Checkout protection', 'product-glide' ) . '</h3>';
+						self::field_check( 'guard_bd_phone', __( 'Accept only valid Bangladeshi mobile numbers at checkout (saved as 01XXXXXXXXX)', 'product-glide' ), $s );
+						self::field_check( 'block_repeat', __( 'Stop the same phone number from ordering again too soon', 'product-glide' ), $s );
+						self::field_number( 'block_max', __( 'Orders allowed per phone in that time', 'product-glide' ), $s );
+						self::field_number( 'block_hours', __( 'Time window (hours)', 'product-glide' ), $s );
+						self::field_textarea( 'block_message', __( 'Message for a repeat order — %order_number% %order_date% %order_time% %order_status% %hours% %hotline%', 'product-glide' ), $s );
+						self::field_textarea( 'blocklist', __( 'Blocked numbers (one per line) — these numbers cannot order from the website', 'product-glide' ), $s );
+						self::field_textarea( 'block_list_message', __( 'Message for a blocked number — %hotline%', 'product-glide' ), $s );
+						echo '<p class="pg-muted">' . esc_html__( 'Cancelled, failed and unpaid online orders do not count. Orders you create in Product Glide are never blocked.', 'product-glide' ) . '</p>';
 						break;
 					case 'updates':
 						if ( isset( $_GET['checked'] ) ) { // phpcs:ignore

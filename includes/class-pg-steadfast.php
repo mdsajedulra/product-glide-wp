@@ -214,18 +214,27 @@ class PG_Steadfast {
 			'cod_amount' => isset( $_POST['cod_amount'] ) && '' !== $_POST['cod_amount'] ? (float) $_POST['cod_amount'] : '', // phpcs:ignore
 			'note'       => PG_Helpers::post_textarea( 'note', '' ),
 		);
-		$payload = self::build_payload( $order, $over );
-		$c       = PG_Steadfast_API::create_order( $payload );
+		$c = self::book( $order, $over );
 		if ( is_wp_error( $c ) ) {
 			wp_send_json_error( array( 'message' => $c->get_error_message() ) );
 		}
-		self::record_booking( $order, $c, $payload );
 		wp_send_json_success(
 			array(
 				'message' => sprintf( /* translators: tracking */ __( 'Booked! Tracking %s', 'product-glide' ), $c['tracking_code'] ),
 				'order'   => PG_Orders::order_card_data( wc_get_order( $order->get_id() ) ),
 			)
 		);
+	}
+
+	/** Book one order with Steadfast and record it. Returns the consignment array or WP_Error. */
+	public static function book( WC_Order $order, array $over = array() ) {
+		$payload = self::build_payload( $order, $over );
+		$c       = PG_Steadfast_API::create_order( $payload );
+		if ( is_wp_error( $c ) ) {
+			return $c;
+		}
+		self::record_booking( $order, $c, $payload );
+		return $c;
 	}
 
 	private static function archive_and_bump( WC_Order $order, $row ) {

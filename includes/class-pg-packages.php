@@ -279,13 +279,17 @@ class PG_Packages {
 		$order->update_meta_data( '_pg_source', $source );
 		$order->calculate_totals( false );
 		$order->save();
-		$msg = 'package' === $source
-			? sprintf( 'Created from Product Glide package%s. Package discount: %s', $label ? ' "' . $label . '"' : '', wc_format_decimal( $discount, 2 ) )
-			: 'Created from Product Glide screenshot/manual order creator.';
+		if ( 'lead' === $source ) {
+			$msg = sprintf( 'Created from Product Glide incomplete order #%s (customer did not finish checkout; confirmed by phone).', $label );
+		} elseif ( 'package' === $source ) {
+			$msg = sprintf( 'Created from Product Glide package%s. Package discount: %s', $label ? ' "' . $label . '"' : '', wc_format_decimal( $discount, 2 ) );
+		} else {
+			$msg = 'Created from Product Glide screenshot/manual order creator.';
+		}
 		PG_Team::$quiet = true;
 		$order->update_status( 'processing', $msg, true );
 		PG_Team::$quiet = false;
-		PG_Team::log( $order->get_id(), 'created', 'package' === $source ? 'Package' . ( $label ? ' "' . $label . '"' : '' ) : ( 'ocr' === $source ? 'Screenshot / manual' : 'Product Glide' ) );
+		PG_Team::log( $order->get_id(), 'created', 'lead' === $source ? 'Incomplete order #' . $label : ( 'package' === $source ? 'Package' . ( $label ? ' "' . $label . '"' : '' ) : ( 'ocr' === $source ? 'Screenshot / manual' : 'Product Glide' ) ) );
 		return wc_get_order( $order->get_id() );
 	}
 

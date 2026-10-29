@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Product Glide - All-in-One WooCommerce Courier & Order Hub
  * Description:       Fast, mobile-friendly order dashboard with Steadfast courier, fraud check, invoice printing, package builder, WhatsApp Cloud API, profit tracking and screenshot order creator. Runs natively inside WordPress (no external REST round-trips for order work).
- * Version:           1.5.2
+ * Version:           1.6.0
  * Author:            Md Sajedul Islam
  * Text Domain:       product-glide
  * Requires PHP:      7.4
@@ -12,8 +12,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PG_VERSION', '1.5.2' );
-define( 'PG_DB_VERSION', '1.2.0' );
+define( 'PG_VERSION', '1.6.0' );
+define( 'PG_DB_VERSION', '1.3.0' );
 define( 'PG_FILE', __FILE__ );
 define( 'PG_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PG_URL', plugin_dir_url( __FILE__ ) );
@@ -34,6 +34,8 @@ require_once PG_DIR . 'includes/class-pg-ocr.php';
 require_once PG_DIR . 'includes/class-pg-admin.php';
 require_once PG_DIR . 'includes/class-pg-app.php';
 require_once PG_DIR . 'includes/class-pg-team.php';
+require_once PG_DIR . 'includes/class-pg-leads.php';
+require_once PG_DIR . 'includes/class-pg-guard.php';
 require_once PG_DIR . 'includes/class-pg-updater.php';
 
 register_activation_hook( __FILE__, array( 'PG_Install', 'activate' ) );
@@ -41,6 +43,7 @@ register_deactivation_hook(
 	__FILE__,
 	function () {
 		wp_clear_scheduled_hook( 'pg_sf_sync_cron' );
+		wp_clear_scheduled_hook( 'pg_leads_cleanup' );
 	}
 );
 
@@ -84,6 +87,8 @@ add_action(
 		PG_Settings::init();
 		PG_Admin::init();
 		PG_Team::init();
+		PG_Leads::init();
+		PG_Guard::init();
 	},
 	20
 );

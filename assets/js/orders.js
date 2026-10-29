@@ -132,63 +132,8 @@
 
 	/* ---------- Courier report: "should we send a parcel?" ---------- */
 
-	var RISK_ICON = { safe: '✓', caution: '!', risky: '✕', 'new': '★' };
-	var VOLUME_BN = { none: 'কোনো রেকর্ড নেই', low: 'কম', medium: 'মাঝারি', high: 'বেশি', very_high: 'অনেক বেশি' };
 	var SKIP_AUTO = ['completed', 'cancelled', 'refunded', 'failed', 'trash'];
-
-	function fraudHtml(f, o) {
-		if (!f) {
-			if (!cfg.sfReady || !o || !o.phone_bd) { return ''; }
-			return '<div class="pg-risk pg-risk-idle"><span class="pg-muted">কুরিয়ার রিপোর্ট দেখা হয়নি</span>' +
-				'<button type="button" class="pg-btn pg-btn-sm" data-act="fraud-refresh">রিপোর্ট দেখুন</button></div>';
-		}
-		if (f.loading) {
-			return '<div class="pg-risk pg-risk-loading"><span class="pg-risk-spin" aria-hidden="true"></span>কুরিয়ার রিপোর্ট লোড হচ্ছে…</div>';
-		}
-		if (f.error) {
-			return '<div class="pg-risk pg-risk-idle"><span>রিপোর্ট আনা যায়নি: ' + esc(f.error) + '</span>' +
-				'<button type="button" class="pg-btn pg-btn-sm" data-act="fraud-refresh">আবার চেষ্টা</button>' +
-				'<a class="pg-btn pg-btn-sm" href="' + esc(cfg.fraudPanel + (o ? o.phone_bd : '')) + '" target="_blank" rel="noopener">Steadfast-এ দেখুন ↗</a></div>';
-		}
-		var v = f.verdict || { level: 'new', title: '', advice: '', reasons: [] };
-		var hasRatio = f.delivery_ratio !== null && f.delivery_ratio !== undefined;
-		var bar = '';
-		if (f.parcels) {
-			bar = '<div class="pg-risk-bar" aria-hidden="true"><i class="ok" style="flex:' + (f.delivered || f.delivery_ratio || 0) + '"></i><i class="bad" style="flex:' + (f.cancelled || (100 - (f.delivery_ratio || 0))) + '"></i></div>';
-		}
-		var stats = [];
-		if (f.parcels) {
-			stats.push('<span><b>' + f.parcels + '</b> পার্সেল</span>');
-			stats.push('<span class="ok"><b>' + (f.delivered || 0) + '</b> ডেলিভারি</span>');
-			stats.push('<span class="' + (f.cancelled ? 'bad' : '') + '"><b>' + (f.cancelled || 0) + '</b> বাতিল</span>');
-		}
-		stats.push('<span class="' + (f.total_reports ? 'bad' : 'ok') + '"><b>' + (f.total_reports || 0) + '</b> ফ্রড রিপোর্ট</span>');
-
-		var detail =
-			'<ul class="pg-risk-why">' + (v.reasons || []).map(function (r) {
-				return '<li class="' + esc(r[0]) + '">' + esc(r[1]) + '</li>';
-			}).join('') +
-			(f.volume_band && f.volume_band !== 'none' ? '<li class="info">অর্ডারের পরিমাণ: ' + esc(VOLUME_BN[f.volume_band] || f.volume_band) + (f.volume_range ? ' (' + esc(f.volume_range) + ' পার্সেল)' : '') + '</li>' : '') +
-			'</ul>' +
-			((f.reports && f.reports.length) ? '<div class="pg-risk-reports"><b>ফ্রড রিপোর্ট</b>' + f.reports.map(function (r) {
-				return '<div class="pg-risk-report"><div>' + esc(r.details || '(বিস্তারিত নেই)') + '</div><small>' +
-					[r.name, r.category, r.date].filter(Boolean).map(esc).join(' · ') + '</small></div>';
-			}).join('') + '</div>' : (f.total_reports ? '<div class="pg-muted" style="margin:6px 0">রিপোর্টের বিস্তারিত Steadfast প্যানেলে দেখা যাবে।</div>' : '')) +
-			'<div class="pg-risk-foot"><span class="pg-muted">চেক করা হয়েছে: ' + esc(f.checked_at || '') + '</span>' +
-				'<span><button type="button" class="pg-btn pg-btn-sm" data-act="fraud-refresh">↻ আবার চেক</button>' +
-				'<a class="pg-btn pg-btn-sm" href="' + esc(f.panel_url) + '" target="_blank" rel="noopener">Steadfast প্যানেল ↗</a></span></div>';
-
-		return '<div class="pg-risk pg-risk-' + esc(v.level) + '">' +
-			'<button type="button" class="pg-risk-head" data-act="risk-toggle" aria-expanded="false">' +
-				'<span class="pg-risk-icon" aria-hidden="true">' + (RISK_ICON[v.level] || '?') + '</span>' +
-				'<span class="pg-risk-msg"><b>' + esc(v.title) + '</b><small>' + esc(v.advice) + '</small></span>' +
-				(hasRatio ? '<span class="pg-risk-pct"><b>' + f.delivery_ratio + '%</b><small>ডেলিভারি</small></span>' : '') +
-			'</button>' +
-			bar +
-			'<div class="pg-risk-stats">' + stats.join('') + '<button type="button" class="pg-risk-more" data-act="risk-toggle">বিস্তারিত ▾</button></div>' +
-			'<div class="pg-risk-detail" hidden>' + detail + '</div>' +
-		'</div>';
-	}
+	var fraudHtml = A.fraudHtml;
 
 	function courierHtml(o) {
 		var c = o.courier;

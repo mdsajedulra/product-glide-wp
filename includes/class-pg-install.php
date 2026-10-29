@@ -105,6 +105,43 @@ class PG_Install {
 			) {$c};"
 		);
 
+		$leads = self::table( 'leads' );
+		dbDelta(
+			"CREATE TABLE {$leads} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			session_key varchar(80) NOT NULL DEFAULT '',
+			status varchar(20) NOT NULL DEFAULT 'open',
+			source varchar(20) NOT NULL DEFAULT 'checkout',
+			phone varchar(20) NOT NULL DEFAULT '',
+			phone_key varchar(12) NOT NULL DEFAULT '',
+			name varchar(150) NOT NULL DEFAULT '',
+			email varchar(190) NOT NULL DEFAULT '',
+			address text NULL,
+			city varchar(100) NOT NULL DEFAULT '',
+			state varchar(100) NOT NULL DEFAULT '',
+			note text NULL,
+			items longtext NULL,
+			item_count int(11) NOT NULL DEFAULT 0,
+			subtotal decimal(12,2) NOT NULL DEFAULT 0,
+			discount decimal(12,2) NOT NULL DEFAULT 0,
+			shipping decimal(12,2) NOT NULL DEFAULT 0,
+			total decimal(12,2) NOT NULL DEFAULT 0,
+			fields longtext NULL,
+			staff_notes longtext NULL,
+			ip varchar(64) NOT NULL DEFAULT '',
+			user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			order_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			created_at datetime NOT NULL,
+			last_activity_at datetime NOT NULL,
+			updated_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY session_key (session_key),
+			KEY phone_key (phone_key),
+			KEY status_activity (status,last_activity_at),
+			KEY updated_at (updated_at)
+			) {$c};"
+		);
+
 		$act = self::table( 'activity' );
 		dbDelta(
 			"CREATE TABLE {$act} (

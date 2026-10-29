@@ -155,11 +155,11 @@ class PG_Helpers {
 			$ord   = $wpdb->prefix . 'wc_orders';
 			$where = str_replace( 'phone_col', 'a.phone', $where );
 			$sql   = "SELECT a.order_id AS id, a.phone AS phone, o.status AS status, o.date_created_gmt AS created FROM {$addr} a INNER JOIN {$ord} o ON o.id = a.order_id
-				WHERE a.address_type = 'billing' AND o.type = 'shop_order' AND o.status NOT IN ('trash','auto-draft','checkout-draft') AND ( {$where} )";
+				WHERE a.address_type = 'billing' AND o.type = 'shop_order' AND o.status NOT IN ('trash','auto-draft','checkout-draft','wc-checkout-draft','draft') AND ( {$where} )";
 		} else {
 			$where = str_replace( 'phone_col', 'm.meta_value', $where );
 			$sql   = "SELECT m.post_id AS id, m.meta_value AS phone, p.post_status AS status, p.post_date_gmt AS created FROM {$wpdb->postmeta} m INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id
-				WHERE m.meta_key = '_billing_phone' AND p.post_type = 'shop_order' AND p.post_status NOT IN ('trash','auto-draft','checkout-draft') AND ( {$where} )";
+				WHERE m.meta_key = '_billing_phone' AND p.post_type = 'shop_order' AND p.post_status NOT IN ('trash','auto-draft','checkout-draft','wc-checkout-draft','draft') AND ( {$where} )";
 		}
 		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ) ); // phpcs:ignore
 		$map  = array();
