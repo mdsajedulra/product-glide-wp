@@ -461,6 +461,10 @@ body.pg-front .pg-toasts { top: 70px; }
 .pg-addr2 { margin-top: 6px; padding: 6px 10px; border-left: 3px solid #2e7d32; background: #f3f8f3; border-radius: 6px; font-size: 13px; line-height: 1.45; color: var(--pg-ink-2); }
 .pg-addr2-row { margin: 2px 0; }
 .pg-addr2-row b { color: var(--pg-ink); }
+.pg-info { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 13px; line-height: 1.5; color: var(--pg-ink-2); }
+.pg-info-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.pg-info-item b { font-weight: 600; color: var(--pg-ink); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.pg-info-item a { color: inherit; }
 
 /* ---------- Team performance ---------- */
 .pg-chip.is-on { background: var(--pg-primary); border-color: var(--pg-primary); color: #fff; }

@@ -96,6 +96,11 @@ class PG_Orders {
 			'total'         => (float) $order->get_total(),
 			'cod'           => PG_Steadfast::default_cod( $order ),
 			'payment'       => $order->get_payment_method_title(),
+			'txn_id'        => (string) $order->get_transaction_id(),
+			'ship_method'   => (string) $order->get_shipping_method(),
+			'company'       => $order->get_shipping_company() ? $order->get_shipping_company() : $order->get_billing_company(),
+			'source'        => self::source_label( $order ),
+			'account'       => self::account_label( $order ),
 			'edit_url'      => $order->get_edit_order_url(),
 			'courier'       => $c ? array(
 				'cid'      => $c->consignment_id,
@@ -116,6 +121,43 @@ class PG_Orders {
 		}
 		$data['dup'] = self::dup_info( $order, $dup_rows );
 		return $data;
+	}
+
+	/** Where the order came from (WooCommerce order attribution), e.g. "facebook / cpc". */
+	private static function source_label( WC_Order $order ) {
+		$type = (string) $order->get_meta( '_wc_order_attribution_source_type' );
+		$src  = (string) $order->get_meta( '_wc_order_attribution_utm_source' );
+		$med  = (string) $order->get_meta( '_wc_order_attribution_utm_medium' );
+		if ( 'admin' === $type ) {
+			return __( 'Created by admin', 'product-glide' );
+		}
+		if ( 'typein' === $type ) {
+			return __( 'Direct visit', 'product-glide' );
+		}
+		if ( 'mobile_app' === $type ) {
+			return __( 'Mobile app', 'product-glide' );
+		}
+		$out = $src && '(direct)' !== $src ? $src : '';
+		if ( $out && $med && '(none)' !== $med ) {
+			$out .= ' / ' . $med;
+		}
+		if ( ! $out ) {
+			$via = (string) $order->get_created_via();
+			if ( 'product-glide' === $via || 'admin' === $via ) {
+				return __( 'Created by admin', 'product-glide' );
+			}
+		}
+		return $out;
+	}
+
+	/** Customer account name, or '' for guest checkouts. */
+	private static function account_label( WC_Order $order ) {
+		$uid = $order->get_customer_id();
+		if ( ! $uid ) {
+			return '';
+		}
+		$u = get_userdata( $uid );
+		return $u ? ( $u->display_name ? $u->display_name : $u->user_login ) : '';
 	}
 
 	/**
@@ -477,6 +519,16 @@ class PG_Orders {
 		$order->set_shipping_phone( $alt ? $alt : '' );
 		if ( isset( $c['note'] ) ) {
 			$order->set_customer_note( sanitize_textarea_field( $c['note'] ) );
+		}
+		if ( isset( $c['email'] ) ) {
+			$email = sanitize_email( $c['email'] );
+			if ( '' !== trim( $c['email'] ) && ! is_email( $email ) ) {
+				wp_send_json_error( array( 'message' => __( 'Enter a valid email address or leave it empty.', 'product-glide' ) ) );
+			}
+			if ( $email !== $order->get_billing_email() ) {
+				$order->set_billing_email( $email );
+				$changes[] = 'email';
+			}
 		}
 		if ( $old_name !== $name ) {
 			$changes[] = 'name';

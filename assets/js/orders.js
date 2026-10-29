@@ -111,6 +111,21 @@
 			(o.addr_zone && zones[o.addr_zone] ? '<div class="pg-addr2-row"><b>Zone:</b> ' + zones[o.addr_zone] + '</div>' : '') + '</div>';
 	}
 
+	/* Extra order details — only the ones this order actually has. */
+	function infoHtml(o) {
+		var row = function (label, v, extra) {
+			return v ? '<span class="pg-info-item"><b>' + label + '</b> ' + esc(v) + (extra || '') + '</span>' : '';
+		};
+		var html = '';
+		if (o.email) {
+			html += '<span class="pg-info-item"><b>Email</b> <a href="mailto:' + esc(o.email) + '">' + esc(o.email) + '</a> <button class="pg-chipbtn" data-copy="' + esc(o.email) + '">Copy</button></span>';
+		}
+		html += row('Company', o.company) + row('Payment', o.payment) + row('Txn ID', o.txn_id) +
+			row('Shipping', o.ship_method) + row('Coupon', o.coupons && o.coupons.length ? o.coupons.join(', ') : '') +
+			row('Source', o.source) + row('Account', o.account);
+		return html ? '<div class="pg-info">' + html + '</div>' : '';
+	}
+
 	function statusPill(s, label) {
 		return '<span class="pg-st pg-st-' + esc(s) + '">' + esc(label || cfg.statuses[s] || s) + '</span>';
 	}
@@ -224,6 +239,7 @@
 						'</div>' +
 						'<div class="pg-cust-addr">' + esc(o.address) + ' <button class="pg-chipbtn" data-copy="' + esc(o.address) + '">Copy address</button></div>' +
 						addrBoth(o) +
+						infoHtml(o) +
 					'</div>' +
 					'<ul class="pg-items">' + items + (o.discount ? '<li><span class="pg-muted">Discount</span><span>-' + A.money(o.discount) + '</span></li>' : '') + (o.shipping ? '<li><span class="pg-muted">Delivery</span><span>' + A.money(o.shipping) + '</span></li>' : '') + '</ul>' +
 					(o.customer_note ? '<div class="pg-custnote"><b>Customer note</b>' + esc(o.customer_note) + '</div>' : '') +
@@ -650,6 +666,7 @@
 					'<div class="pg-field"><label>City / District</label><input type="text" data-c="city" value="' + esc(o.city) + '"></div>' +
 					'<div class="pg-field"><label>Alternative phone</label><input type="tel" data-c="alt_phone" value="' + esc(o.alt_phone) + '"></div>' +
 				'</div>' +
+				'<div class="pg-field"><label>Email</label><input type="email" data-c="email" value="' + esc(o.email) + '" placeholder="optional"></div>' +
 				'<div class="pg-field"><label>Customer note</label><textarea rows="2" data-c="note">' + esc(o.customer_note) + '</textarea></div>' +
 			'</div>' +
 			'<div class="pg-card"><div class="pg-card-head"><h2>Products</h2></div>' +
