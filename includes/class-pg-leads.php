@@ -532,7 +532,7 @@ class PG_Leads {
 		if ( in_array( $row->status, array( 'converted', 'ordered' ), true ) ) {
 			wp_send_json_error( array( 'message' => __( 'This one already became an order.', 'product-glide' ) ) );
 		}
-		$labels = array( 'open' => 'আবার অসম্পূর্ণ তালিকায়', 'hold' => 'পরে কল', 'cancelled' => 'বাতিল' );
+		$labels = array( 'open' => 'Moved back to Incomplete', 'hold' => 'Call later', 'cancelled' => 'Cancelled' );
 		$note   = PG_Helpers::post_textarea( 'note', '' );
 		$wpdb->update( // phpcs:ignore
 			self::table(),
@@ -608,7 +608,7 @@ class PG_Leads {
 				'status'      => 'converted',
 				'order_id'    => $order->get_id(),
 				'user_id'     => get_current_user_id(),
-				'staff_notes' => self::add_note( $row, sprintf( 'কনফার্ম → অর্ডার #%s%s', $order->get_order_number(), PG_Helpers::post_int( 'send_sf' ) ? ' (Steadfast)' : '' ), 'status' ),
+				'staff_notes' => self::add_note( $row, sprintf( 'Confirmed → order #%s%s', $order->get_order_number(), PG_Helpers::post_int( 'send_sf' ) ? ' (Steadfast)' : '' ), 'status' ),
 				'updated_at'  => current_time( 'mysql', true ),
 			),
 			array( 'id' => (int) $row->id )

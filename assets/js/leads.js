@@ -12,22 +12,21 @@
 	} catch (e) {}
 
 	var STATUS = {
-		open: ['pg-badge-warn', 'অসম্পূর্ণ'],
-		hold: ['pg-badge-info', 'পরে কল'],
-		cancelled: ['pg-badge-bad', 'বাতিল'],
-		converted: ['pg-badge-ok', 'কনফার্ম হয়েছে'],
-		ordered: ['pg-badge-ok', 'কাস্টমার নিজে অর্ডার করেছে']
+		open: ['pg-badge-warn', 'Incomplete'],
+		hold: ['pg-badge-info', 'Call later'],
+		cancelled: ['pg-badge-bad', 'Cancelled'],
+		converted: ['pg-badge-ok', 'Confirmed'],
+		ordered: ['pg-badge-ok', 'Ordered by customer']
 	};
 	var TAB_BN = {
-		waiting: 'অসম্পূর্ণ', active: 'এখন checkout-এ', hold: 'পরে কল', converted: 'কনফার্ম হয়েছে',
-		ordered: 'কাস্টমার নিজে অর্ডার করেছে', cancelled: 'বাতিল', all: 'সব'
+		waiting: 'Incomplete', active: 'On checkout now', hold: 'Call later', converted: 'Confirmed',
+		ordered: 'Ordered by customer', cancelled: 'Cancelled', all: 'All'
 	};
 
 	root.innerHTML =
-		(L.enabled ? '' : '<div class="pg-alert pg-alert-warn">অসম্পূর্ণ অর্ডার সেভ করা বন্ধ আছে। <a href="' + esc(L.settingsUrl) + '">Settings থেকে চালু করুন</a>।</div>') +
-		'<p class="pg-muted pg-leads-intro">কাস্টমার checkout পেজে নাম-ফোন লিখেছে কিন্তু "Place order" চাপেনি — তাদের তালিকা। ফোন করে কনফার্ম করলে এক ক্লিকে আসল অর্ডার হবে। ' +
-			'নিজে অর্ডার করে ফেললে এখান থেকে নিজে থেকেই সরে যাবে।</p>' +
-		'<div class="pg-toolbar"><input type="search" data-q placeholder="নাম, ফোন বা ঠিকানা দিয়ে খুঁজুন…" autocomplete="off"></div>' +
+		(L.enabled ? '' : '<div class="pg-alert pg-alert-warn">Saving incomplete orders is turned off. <a href="' + esc(L.settingsUrl) + '">Turn it on in Settings</a>.</div>') +
+		'<p class="pg-muted pg-leads-intro">Customers who typed their name and phone on the checkout page but did not press "Place order". Call them — if they agree, one click creates the real order. If they come back and order by themselves, they leave this list automatically.</p>' +
+		'<div class="pg-toolbar"><input type="search" data-q placeholder="Search name, phone or address…" autocomplete="off"></div>' +
 		'<div class="pg-status-tabs" data-tabs></div>' +
 		'<div class="pg-list" data-list></div>' +
 		'<div class="pg-pager" data-pager></div>';
@@ -64,20 +63,20 @@
 	}
 
 	function renderPager(page, pages, total) {
-		if (pages <= 1) { $pager.innerHTML = '<span class="pg-muted">মোট ' + total + 'টি</span>'; return; }
+		if (pages <= 1) { $pager.innerHTML = '<span class="pg-muted">' + total + ' total</span>'; return; }
 		$pager.innerHTML =
-			'<button class="pg-btn pg-btn-sm" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>‹ আগের</button>' +
-			'<span class="pg-muted">পেজ ' + page + ' / ' + pages + ' · মোট ' + total + 'টি</span>' +
-			'<button class="pg-btn pg-btn-sm" data-page="' + (page + 1) + '"' + (page >= pages ? ' disabled' : '') + '>পরের ›</button>';
+			'<button class="pg-btn pg-btn-sm" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>‹ Prev</button>' +
+			'<span class="pg-muted">Page ' + page + ' / ' + pages + ' · ' + total + ' total</span>' +
+			'<button class="pg-btn pg-btn-sm" data-page="' + (page + 1) + '"' + (page >= pages ? ' disabled' : '') + '>Next ›</button>';
 	}
 
 	var EMPTY = {
-		waiting: 'এখন কোনো অসম্পূর্ণ অর্ডার নেই।', active: 'এই মুহূর্তে কেউ checkout পেজে লিখছে না।', hold: '"পরে কল" তালিকা খালি।',
-		converted: 'এখনো কোনোটা কনফার্ম করা হয়নি।', ordered: 'এখনো কেউ ফিরে এসে নিজে অর্ডার করেনি।', cancelled: 'কোনো বাতিল নেই।', all: 'কিছু নেই।'
+		waiting: 'No incomplete orders right now.', active: 'Nobody is typing on the checkout page at the moment.', hold: 'The Call later list is empty.',
+		converted: 'Nothing confirmed yet.', ordered: 'Nobody has come back and ordered yet.', cancelled: 'Nothing cancelled.', all: 'Nothing here.'
 	};
 
 	function renderList() {
-		if (!state.order.length) { $list.innerHTML = '<div class="pg-empty">' + esc(state.q ? 'কিছু পাওয়া যায়নি।' : EMPTY[state.tab]) + '</div>'; return; }
+		if (!state.order.length) { $list.innerHTML = '<div class="pg-empty">' + esc(state.q ? 'Nothing found.' : EMPTY[state.tab]) + '</div>'; return; }
 		$list.innerHTML = state.order.map(function (id) { return cardHtml(state.leads[id]); }).join('');
 		autoFraud();
 	}
@@ -86,10 +85,10 @@
 
 	function ago(min) {
 		min = Math.max(0, min || 0);
-		if (min < 1) { return 'এইমাত্র'; }
-		if (min < 60) { return min + ' মিনিট আগে'; }
-		if (min < 1440) { return Math.floor(min / 60) + ' ঘণ্টা আগে'; }
-		return Math.floor(min / 1440) + ' দিন আগে';
+		if (min < 1) { return 'just now'; }
+		if (min < 60) { return min + ' min ago'; }
+		if (min < 1440) { return Math.floor(min / 60) + ' h ago'; }
+		var dd = Math.floor(min / 1440); return dd + (dd === 1 ? ' day ago' : ' days ago');
 	}
 
 	function cardHtml(x) {
@@ -100,34 +99,34 @@
 		}).join('');
 		var past = '';
 		if (x.past && x.past.count) {
-			past = '<div class="pg-lead-past"><b>এই নম্বরে আগে ' + x.past.count + 'টি অর্ডার:</b> ' + x.past.recent.map(function (o) {
+			past = '<div class="pg-lead-past"><b>Previous orders from this number (' + x.past.count + '):</b> ' + x.past.recent.map(function (o) {
 				return '#' + o.id + ' (' + esc(o.status) + ', ' + esc(o.date) + ')';
 			}).join(' · ') + '</div>';
 		}
 		var info = [];
 		if (x.email) { info.push('<span class="pg-info-item"><b>Email</b> ' + esc(x.email) + '</span>'); }
-		if (x.source === 'order-detect') { info.push('<span class="pg-info-item"><b>উৎস</b> Order Detect থেকে আনা</span>'); }
-		if (x.handled_by) { info.push('<span class="pg-info-item"><b>দেখেছেন</b> ' + esc(x.handled_by) + '</span>'); }
+		if (x.source === 'order-detect') { info.push('<span class="pg-info-item"><b>Source</b> Imported from Order Detect</span>'); }
+		if (x.handled_by) { info.push('<span class="pg-info-item"><b>Handled by</b> ' + esc(x.handled_by) + '</span>'); }
 
 		var done = x.status === 'converted' || x.status === 'ordered';
 		var actions;
 		if (done) {
-			actions = x.order ? '<a class="pg-btn pg-btn-primary" href="' + esc(x.order.url) + '">অর্ডার #' + esc(x.order.number) + ' দেখুন (' + esc(x.order.status) + ')</a>' : '';
+			actions = x.order ? '<a class="pg-btn pg-btn-primary" href="' + esc(x.order.url) + '">View order #' + esc(x.order.number) + ' (' + esc(x.order.status) + ')</a>' : '';
 		} else {
-			actions = '<button class="pg-btn pg-btn-primary" data-act="confirm">✓ কনফার্ম করে অর্ডার বানান</button>' +
-				(x.status !== 'hold' ? '<button class="pg-btn" data-act="hold">⏰ পরে কল</button>' : '<button class="pg-btn" data-act="reopen">↩ অসম্পূর্ণ তালিকায় ফেরত</button>') +
-				(x.status !== 'cancelled' ? '<button class="pg-btn pg-btn-bad" data-act="cancel">✕ বাতিল</button>' : '<button class="pg-btn" data-act="reopen">↩ আবার খুলুন</button>');
+			actions = '<button class="pg-btn pg-btn-primary" data-act="confirm">✓ Confirm &amp; create order</button>' +
+				(x.status !== 'hold' ? '<button class="pg-btn" data-act="hold">⏰ Call later</button>' : '<button class="pg-btn" data-act="reopen">↩ Back to incomplete</button>') +
+				(x.status !== 'cancelled' ? '<button class="pg-btn pg-btn-bad" data-act="cancel">✕ Cancel</button>' : '<button class="pg-btn" data-act="reopen">↩ Reopen</button>');
 		}
-		if (cfg.isAdmin) { actions += '<button class="pg-btn pg-btn-ghost pg-btn-bad" data-act="delete" title="মুছে ফেলুন">মুছুন</button>'; }
+		if (cfg.isAdmin) { actions += '<button class="pg-btn pg-btn-ghost pg-btn-bad" data-act="delete" title="Delete permanently">Delete</button>'; }
 
 		return '<article class="pg-order pg-lead" data-id="' + x.id + '">' +
 			'<div class="pg-order-top"><div class="pg-order-main">' +
 				'<div class="pg-order-line1"><span class="pg-order-no">#' + x.id + '</span>' +
 					'<span class="pg-badge ' + st[0] + '">' + esc(st[1]) + '</span>' +
-					(x.live ? '<span class="pg-badge pg-lead-live"><i></i>এখন checkout-এ লিখছে</span>' : '') +
+					(x.live ? '<span class="pg-badge pg-lead-live"><i></i>Typing on checkout now</span>' : '') +
 					'<span class="pg-order-date" title="' + esc(x.last) + '">' + ago(x.ago_min) + ' · ' + esc(x.last) + '</span>' +
 					'<span class="pg-order-total">' + A.money(x.total) + '</span></div>' +
-				'<div class="pg-cust"><div class="pg-cust-name">' + esc(x.name || '(নাম লেখেনি)') + '</div>' +
+				'<div class="pg-cust"><div class="pg-cust-name">' + esc(x.name || '(no name)') + '</div>' +
 					'<div class="pg-cust-row"><a class="pg-phone" href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' +
 						'<a class="pg-chipbtn call" href="tel:' + esc(phone) + '">Call</a>' +
 						'<button class="pg-chipbtn" data-copy="' + esc(phone) + '">Copy</button>' +
@@ -136,10 +135,10 @@
 					(x.full_address ? '<div class="pg-cust-addr">' + esc(x.full_address) + ' <button class="pg-chipbtn" data-copy="' + esc(x.full_address) + '">Copy</button></div>' : '<div class="pg-cust-addr pg-muted">(ঠিকানা লেখেনি)</div>') +
 					(info.length ? '<div class="pg-info">' + info.join('') + '</div>' : '') +
 				'</div>' +
-				'<ul class="pg-items">' + (items || '<li class="pg-muted">প্রোডাক্টের তথ্য নেই</li>') +
-					(x.discount ? '<li><span class="pg-muted">ছাড়</span><span>-' + A.money(x.discount) + '</span></li>' : '') +
-					(x.shipping ? '<li><span class="pg-muted">ডেলিভারি</span><span>' + A.money(x.shipping) + '</span></li>' : '') + '</ul>' +
-				(x.note ? '<div class="pg-custnote"><b>কাস্টমারের নোট</b>' + esc(x.note) + '</div>' : '') +
+				'<ul class="pg-items">' + (items || '<li class="pg-muted">No product details</li>') +
+					(x.discount ? '<li><span class="pg-muted">Discount</span><span>-' + A.money(x.discount) + '</span></li>' : '') +
+					(x.shipping ? '<li><span class="pg-muted">Delivery</span><span>' + A.money(x.shipping) + '</span></li>' : '') + '</ul>' +
+				(x.note ? '<div class="pg-custnote"><b>Customer note</b>' + esc(x.note) + '</div>' : '') +
 				past +
 				(done ? '' : '<div class="pg-fraud" data-fraud>' + A.fraudHtml(x.fraud, x) + '</div>') +
 				notesHtml(x) +
@@ -154,7 +153,7 @@
 				'<div class="pg-note-meta"><span>' + esc(n.by || '') + '</span><span>' + esc(n.at || '') + '</span></div></div>';
 		}).join('');
 		return '<div class="pg-lead-notes">' +
-			'<div class="pg-note-form"><textarea rows="1" data-note-input placeholder="নোট লিখুন — যেমন: ফোন ধরেনি, বিকেলে কল দিতে বলেছে…" aria-label="নোট"></textarea><button class="pg-btn" data-act="note">যোগ করুন</button></div>' +
+			'<div class="pg-note-form"><textarea rows="1" data-note-input placeholder="Add a note — e.g. did not pick up, call in the afternoon…" aria-label="Note"></textarea><button class="pg-btn" data-act="note">Add</button></div>' +
 			(list ? '<div class="pg-notes">' + list + '</div>' : '') + '</div>';
 	}
 
@@ -222,7 +221,7 @@
 	function setStatus(id, status, note, btn) {
 		A.busy(btn, true);
 		return A.ajax('pg_leads_status', { id: id, status: status, note: note || '' }).then(function (d) {
-			var msg = { hold: 'পরে কলের তালিকায় রাখা হলো', cancelled: 'বাতিল করা হলো', open: 'অসম্পূর্ণ তালিকায় ফেরত গেল' }[status];
+			var msg = { hold: 'Moved to Call later', cancelled: 'Cancelled', open: 'Moved back to Incomplete' }[status];
 			A.toast(msg, 'ok');
 			renderTabs(d.counts);
 			if (state.tab === 'all') { replace(d.lead); } else { removeCard(id); }
@@ -231,8 +230,8 @@
 
 	function askNote(title, placeholder, okText, okClass) {
 		return new Promise(function (resolve) {
-			var m = A.modal(title, '<div class="pg-field"><label>কারণ / নোট (ইচ্ছা হলে)</label><textarea rows="2" data-n placeholder="' + esc(placeholder) + '"></textarea></div>' +
-				'<div class="pg-form-actions"><button class="pg-btn" data-close>ফিরে যান</button><button class="pg-btn ' + okClass + '" data-ok>' + esc(okText) + '</button></div>', { center: true, onClose: function () { resolve(null); } });
+			var m = A.modal(title, '<div class="pg-field"><label>Reason / note (optional)</label><textarea rows="2" data-n placeholder="' + esc(placeholder) + '"></textarea></div>' +
+				'<div class="pg-form-actions"><button class="pg-btn" data-close>Back</button><button class="pg-btn ' + okClass + '" data-ok>' + esc(okText) + '</button></div>', { center: true, onClose: function () { resolve(null); } });
 			var ta = m.body.querySelector('[data-n]');
 			ta.focus();
 			m.body.querySelector('[data-ok]').addEventListener('click', function () { var v = ta.value.trim(); resolve(v); m.close(); });
@@ -259,22 +258,22 @@
 		switch (act) {
 			case 'confirm': confirmLead(id); break;
 			case 'hold':
-				askNote('পরে কল দেবেন', 'যেমন: রাত ৮টায় কল দিতে বলেছে', 'পরে কলের তালিকায় রাখুন', 'pg-btn-primary').then(function (n) { if (n !== null) { setStatus(id, 'hold', n, el); } });
+				askNote('Call later', 'e.g. asked to call at 8 PM', 'Move to Call later', 'pg-btn-primary').then(function (n) { if (n !== null) { setStatus(id, 'hold', n, el); } });
 				break;
 			case 'cancel':
-				askNote('বাতিল করবেন?', 'যেমন: অর্ডার করবে না / ভুল নম্বর', 'হ্যাঁ, বাতিল', 'pg-btn-bad').then(function (n) { if (n !== null) { setStatus(id, 'cancelled', n, el); } });
+				askNote('Cancel this one?', 'e.g. does not want it / wrong number', 'Yes, cancel', 'pg-btn-bad').then(function (n) { if (n !== null) { setStatus(id, 'cancelled', n, el); } });
 				break;
 			case 'reopen': setStatus(id, 'open', '', el); break;
 			case 'delete':
-				if (!window.confirm('এই এন্ট্রিটা পুরোপুরি মুছে ফেলবেন?')) { return; }
-				A.ajax('pg_leads_delete', { ids: [id] }).then(function (d) { renderTabs(d.counts); removeCard(id); A.toast('মুছে ফেলা হলো', 'ok'); })
+				if (!window.confirm('Delete this entry permanently?')) { return; }
+				A.ajax('pg_leads_delete', { ids: [id] }).then(function (d) { renderTabs(d.counts); removeCard(id); A.toast('Deleted', 'ok'); })
 					.catch(function (err) { A.toast(err.message, 'bad'); });
 				break;
 			case 'note':
 				var inp = card.querySelector('[data-note-input]');
 				if (!inp.value.trim()) { inp.focus(); return; }
 				A.busy(el, true);
-				A.ajax('pg_leads_note', { id: id, note: inp.value.trim() }).then(function (d) { replace(d.lead); A.toast('নোট যোগ হলো', 'ok'); })
+				A.ajax('pg_leads_note', { id: id, note: inp.value.trim() }).then(function (d) { replace(d.lead); A.toast('Note added', 'ok'); })
 					.catch(function (err) { A.toast(err.message, 'bad'); A.busy(el, false); });
 				break;
 			case 'fraud-refresh': fraudCheck(id, true); break;
@@ -300,43 +299,43 @@
 		if (x.fraud && x.fraud.verdict && x.fraud.verdict.level !== 'safe' && x.fraud.verdict.level !== 'new') {
 			risk = '<div class="pg-alert pg-alert-' + (x.fraud.verdict.level === 'risky' ? 'bad' : 'warn') + '">' + esc(x.fraud.verdict.title) + ' — ' + esc(x.fraud.verdict.advice) + '</div>';
 		}
-		var m = A.modal('কনফার্ম করে অর্ডার বানান · #' + x.id,
+		var m = A.modal('Confirm & create order · #' + x.id,
 			risk +
 			'<div class="pg-edit">' +
-			'<div class="pg-card"><div class="pg-card-head"><h2>কাস্টমার</h2></div>' +
+			'<div class="pg-card"><div class="pg-card-head"><h2>Customer</h2></div>' +
 				'<div class="pg-grid pg-grid-2">' +
-					'<div class="pg-field"><label>নাম *</label><input type="text" data-c="name" value="' + esc(x.name) + '"></div>' +
-					'<div class="pg-field"><label>ফোন *</label><input type="tel" data-c="phone" value="' + esc(x.phone_bd || x.phone) + '"></div>' +
+					'<div class="pg-field"><label>Name *</label><input type="text" data-c="name" value="' + esc(x.name) + '"></div>' +
+					'<div class="pg-field"><label>Phone *</label><input type="tel" data-c="phone" value="' + esc(x.phone_bd || x.phone) + '"></div>' +
 				'</div>' +
-				'<div class="pg-field"><label>ঠিকানা *</label><textarea rows="2" data-c="address">' + esc(x.address) + '</textarea></div>' +
+				'<div class="pg-field"><label>Address *</label><textarea rows="2" data-c="address">' + esc(x.address) + '</textarea></div>' +
 				'<div class="pg-grid pg-grid-2">' +
-					'<div class="pg-field"><label>শহর / জেলা</label><input type="text" data-c="city" value="' + esc([x.city, x.state].filter(Boolean).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ')) + '"></div>' +
-					'<div class="pg-field"><label>Email</label><input type="email" data-c="email" value="' + esc(x.email) + '" placeholder="ঐচ্ছিক"></div>' +
+					'<div class="pg-field"><label>City / District</label><input type="text" data-c="city" value="' + esc([x.city, x.state].filter(Boolean).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ')) + '"></div>' +
+					'<div class="pg-field"><label>Email</label><input type="email" data-c="email" value="' + esc(x.email) + '" placeholder="optional"></div>' +
 				'</div>' +
-				'<div class="pg-field"><label>কাস্টমারের নোট</label><textarea rows="2" data-c="note">' + esc(x.note) + '</textarea></div>' +
+				'<div class="pg-field"><label>Customer note</label><textarea rows="2" data-c="note">' + esc(x.note) + '</textarea></div>' +
 			'</div>' +
-			'<div class="pg-card"><div class="pg-card-head"><h2>প্রোডাক্ট</h2></div>' +
+			'<div class="pg-card"><div class="pg-card-head"><h2>Products</h2></div>' +
 				'<div class="pg-edit-head"><span></span><span>Product</span><span>Price</span><span>Qty</span><span>Total</span><span></span></div>' +
 				'<div data-items></div>' +
 				'<div class="pg-grid pg-grid-2" style="margin-top:12px">' +
-					'<div class="pg-field"><label>ছাড় (৳)</label><input type="number" min="0" step="1" data-discount value="' + Math.round(x.discount || 0) + '"></div>' +
-					'<div class="pg-field"><label>ডেলিভারি চার্জ (৳)</label><input type="number" min="0" step="1" data-delivery value="' + Math.round(delivery) + '"></div>' +
+					'<div class="pg-field"><label>Discount (৳)</label><input type="number" min="0" step="1" data-discount value="' + Math.round(x.discount || 0) + '"></div>' +
+					'<div class="pg-field"><label>Delivery charge (৳)</label><input type="number" min="0" step="1" data-delivery value="' + Math.round(delivery) + '"></div>' +
 				'</div>' +
 				'<div class="pg-pkg-sum" data-sum></div>' +
 			'</div>' +
-			'<div class="pg-card"><div class="pg-card-head"><h2>প্রোডাক্ট যোগ করুন</h2></div><div data-picker></div></div>' +
-			'<div class="pg-card pg-lead-sf"><div class="pg-card-head"><h2>কুরিয়ার</h2></div>' +
+			'<div class="pg-card"><div class="pg-card-head"><h2>Add products</h2></div><div data-picker></div></div>' +
+			'<div class="pg-card pg-lead-sf"><div class="pg-card-head"><h2>Courier</h2></div>' +
 				(cfg.sfReady ?
-					'<label class="pg-check"><input type="checkbox" data-sf checked> অর্ডারের সাথে সাথে Steadfast-এ পাঠান (স্ট্যাটাস হবে Courier Sent)</label>' +
+					'<label class="pg-check"><input type="checkbox" data-sf checked> Send to Steadfast right away (status becomes Courier Sent)</label>' +
 					'<div class="pg-grid pg-grid-2" data-sf-box style="margin-top:10px">' +
-						'<div class="pg-field"><label>COD (৳) — কাস্টমার যত টাকা দেবে</label><input type="number" min="0" step="1" data-cod></div>' +
-						'<div class="pg-field"><label>রাইডারের জন্য নোট</label><input type="text" data-sf-note placeholder="ঐচ্ছিক"></div>' +
+						'<div class="pg-field"><label>COD amount (৳) — what the customer pays</label><input type="number" min="0" step="1" data-cod></div>' +
+						'<div class="pg-field"><label>Note for the rider</label><input type="text" data-sf-note placeholder="optional"></div>' +
 					'</div>' +
-					'<p class="pg-muted">টিক তুলে দিলে অর্ডার Processing-এ থাকবে, পরে Orders পেজ থেকে পাঠাতে পারবেন।</p>'
-					: '<p class="pg-muted">Steadfast সেটআপ করা নেই — অর্ডার Processing-এ যাবে।</p>') +
+					'<p class="pg-muted">Untick to keep the order in Processing and send it later from the Orders page.</p>'
+					: '<p class="pg-muted">Steadfast is not set up — the order will go to Processing.</p>') +
 			'</div>' +
 			'</div>' +
-			'<div class="pg-form-actions pg-edit-actions"><button type="button" class="pg-btn" data-close>ফিরে যান</button><button type="button" class="pg-btn pg-btn-primary" data-save>✓ অর্ডার বানান</button></div>',
+			'<div class="pg-form-actions pg-edit-actions"><button type="button" class="pg-btn" data-close>Back</button><button type="button" class="pg-btn pg-btn-primary" data-save>✓ Create order</button></div>',
 			{ center: true, wide: true });
 		var body = m.body, picker = null, codTouched = false;
 		var $cod = body.querySelector('[data-cod]');
@@ -352,9 +351,9 @@
 			items.forEach(function (it, i) { var el = body.querySelector('[data-lt="' + i + '"]'); if (el) { el.textContent = A.money((Number(it.price) || 0) * it.qty); } });
 			body.querySelector('[data-sum]').innerHTML =
 				'<div><span>Subtotal</span><span>' + A.money(s.sub) + '</span></div>' +
-				(s.disc ? '<div><span>ছাড়</span><span>-' + A.money(s.disc) + '</span></div>' : '') +
-				'<div><span>ডেলিভারি</span><span>' + A.money(s.del) + '</span></div>' +
-				'<div class="total"><span>মোট</span><span>' + A.money(s.total) + '</span></div>';
+				(s.disc ? '<div><span>Discount</span><span>-' + A.money(s.disc) + '</span></div>' : '') +
+				'<div><span>Delivery</span><span>' + A.money(s.del) + '</span></div>' +
+				'<div class="total"><span>Total</span><span>' + A.money(s.total) + '</span></div>';
 			if ($cod && !codTouched) { $cod.value = Math.round(s.total); }
 		}
 		function renderItems() {
@@ -366,7 +365,7 @@
 					'<input type="number" min="1" step="1" data-qty="' + i + '" value="' + esc(it.qty) + '" aria-label="Quantity">' +
 					'<div class="lt" data-lt="' + i + '">' + A.money(it.price * it.qty) + '</div>' +
 					'<button type="button" class="pg-btn pg-btn-sm pg-btn-bad" data-rm="' + i + '" aria-label="Remove">✕</button></div>';
-			}).join('') : '<div class="pg-pp-cart-empty">কোনো প্রোডাক্ট নেই — নিচের তালিকা থেকে যোগ করুন।</div>';
+			}).join('') : '<div class="pg-pp-cart-empty">No products — add at least one from the list below.</div>';
 			renderSum();
 			if (picker) { picker.refresh(); }
 		}
@@ -389,15 +388,15 @@
 				var ex = items.find(function (it) { return it.product_id === p.id; });
 				if (ex) { ex.qty++; } else { items.push({ product_id: p.id, name: p.name, qty: 1, price: p.price, thumb: p.thumb }); }
 				renderItems();
-				A.toast('যোগ হলো: ' + p.name, 'ok');
+				A.toast('Added: ' + p.name, 'ok');
 			},
 			inOrder: function (pid) { return items.reduce(function (n, it) { return n + (it.product_id === pid ? it.qty : 0); }, 0); }
 		});
 		body.querySelector('[data-save]').addEventListener('click', function () {
 			var b = this, cust = { payment: 'cod' };
 			body.querySelectorAll('[data-c]').forEach(function (el) { cust[el.getAttribute('data-c')] = el.value.trim(); });
-			if (!cust.name || !cust.phone || !cust.address) { A.toast('নাম, ফোন আর ঠিকানা লাগবে।', 'bad'); return; }
-			if (!items.length) { A.toast('অন্তত একটা প্রোডাክ্ট যোগ করুন।', 'bad'); return; }
+			if (!cust.name || !cust.phone || !cust.address) { A.toast('Name, phone and address are required.', 'bad'); return; }
+			if (!items.length) { A.toast('Add at least one product.', 'bad'); return; }
 			var sf = body.querySelector('[data-sf]');
 			A.busy(b, true);
 			A.ajax('pg_leads_confirm', {
