@@ -132,7 +132,7 @@
 						'<button class="pg-chipbtn" data-copy="' + esc(phone) + '">Copy</button>' +
 						(wa ? '<a class="pg-chipbtn" href="https://wa.me/' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>' : '') +
 					'</div>' +
-					(x.full_address ? '<div class="pg-cust-addr">' + esc(x.full_address) + ' <button class="pg-chipbtn" data-copy="' + esc(x.full_address) + '">Copy</button></div>' : '<div class="pg-cust-addr pg-muted">(ঠিকানা লেখেনি)</div>') +
+					(x.full_address ? '<div class="pg-cust-addr">' + esc(x.full_address) + ' <button class="pg-chipbtn" data-copy="' + esc(x.full_address) + '">Copy</button></div>' : '<div class="pg-cust-addr pg-muted">(no address)</div>') +
 					(info.length ? '<div class="pg-info">' + info.join('') + '</div>' : '') +
 				'</div>' +
 				'<ul class="pg-items">' + (items || '<li class="pg-muted">No product details</li>') +
