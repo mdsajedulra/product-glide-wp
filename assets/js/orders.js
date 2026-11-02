@@ -168,7 +168,7 @@
 			sfBtn = '<button class="pg-btn" data-act="sf-refresh" title="Fetch the latest status from ' + esc(o.courier.label) + '">↻ Refresh status</button>' +
 				'<button class="pg-btn pg-btn-bad" data-act="sf-void" title="' + (cb ? 'Cancel the parcel with Carrybee and free the order to resend' : 'Use after cancelling the parcel in the Steadfast portal') + '">' + (cb ? 'Cancel / Resend' : 'Void / Resend') + '</button>';
 		} else {
-			sfBtn = '<button class="pg-btn pg-btn-primary" data-act="sf-send">' + (o.courier ? 'Resend' : 'Send') + ' to ' + esc(courierWord()) + '</button>';
+			sfBtn = courierKeys().length ? '<button class="pg-btn pg-btn-primary" data-act="sf-send">' + (o.courier ? 'Resend' : 'Send') + ' to ' + esc(courierWord()) + '</button>' : '';
 		}
 		var statusOpts = Object.keys(cfg.statuses).map(function (s) {
 			return '<option value="' + esc(s) + '"' + (s === o.status ? ' selected' : '') + '>' + esc(cfg.statuses[s]) + '</option>';
@@ -515,6 +515,13 @@
 			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
 		});
 	}
+
+	(function () {
+		var bulkBtn = document.querySelector('[data-bulk="sf"]');
+		if (!bulkBtn) { return; }
+		var k = courierKeys();
+		if (!k.length) { bulkBtn.style.display = 'none'; } else if (k.length === 1) { bulkBtn.textContent = 'Send to ' + COURIERS[k[0]]; }
+	})();
 
 	/* ---------- Selection / bulk bar ---------- */
 

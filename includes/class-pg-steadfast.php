@@ -226,6 +226,9 @@ class PG_Steadfast {
 				)
 			);
 		}
+		if ( ! PG_Courier::ready( 'steadfast' ) ) {
+			wp_send_json_error( array( 'message' => PG_Courier::enabled( 'steadfast' ) ? __( 'Steadfast API keys are not set (Settings → Steadfast).', 'product-glide' ) : __( 'Steadfast is turned off (Settings → General → Couriers).', 'product-glide' ) ) );
+		}
 		if ( $existing ) {
 			// Previous parcel was cancelled by courier: archive it and resend with a new suffix.
 			self::archive_and_bump( $order, $existing );
@@ -271,6 +274,9 @@ class PG_Steadfast {
 		}
 		if ( 'carrybee' === sanitize_key( PG_Helpers::post( 'courier', 'steadfast' ) ) ) {
 			self::bulk_carrybee( $ids );
+		}
+		if ( ! PG_Courier::ready( 'steadfast' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Steadfast is turned off or not set up.', 'product-glide' ) ) );
 		}
 		$results  = array();
 		$payloads = array();
@@ -328,8 +334,8 @@ class PG_Steadfast {
 
 	/** Carrybee has no bulk call that answers right away, so book one by one (time-boxed). */
 	private static function bulk_carrybee( array $ids ) {
-		if ( ! PG_Carrybee_API::ready() ) {
-			wp_send_json_error( array( 'message' => __( 'Carrybee is not set up yet (Settings → Carrybee).', 'product-glide' ) ) );
+		if ( ! PG_Courier::ready( 'carrybee' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Carrybee is turned off or not set up (Settings).', 'product-glide' ) ) );
 		}
 		$results = array();
 		$t0      = microtime( true );

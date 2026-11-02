@@ -21,7 +21,9 @@ class PG_App {
 		);
 		if ( current_user_can( 'manage_options' ) ) {
 			$views['profit']    = array( 'pg-profit', __( 'Profit & Stock', 'product-glide' ) );
-			$views['steadfast'] = array( 'pg-steadfast', __( 'Steadfast', 'product-glide' ) );
+			if ( PG_Courier::enabled( 'steadfast' ) ) {
+				$views['steadfast'] = array( 'pg-steadfast', __( 'Steadfast', 'product-glide' ) );
+			}
 			$views['team']      = array( 'pg-team', __( 'Team', 'product-glide' ) );
 		}
 		return $views;

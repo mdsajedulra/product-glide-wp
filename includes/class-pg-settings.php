@@ -54,6 +54,8 @@ class PG_Settings {
 			'cb_default_note'     => '',
 			'cb_webhook_secret'   => '',
 			'default_courier'     => 'steadfast',
+			'sf_enabled'          => 1,
+			'cb_enabled'          => 1,
 			// Fraud.
 			'fraud_auto'          => 1,
 			'fraud_cache_hours'   => 24,
@@ -163,6 +165,7 @@ class PG_Settings {
 			'whatsapp'  => array( 'wa_auto' ),
 			'leads'     => array( 'lead_enabled', 'guard_bd_phone', 'block_repeat' ),
 			'carrybee'  => array( 'cb_auto_area' ),
+			'general'   => array( 'sf_enabled', 'cb_enabled' ),
 		);
 		if ( isset( $checkbox_by_section[ $section ] ) ) {
 			foreach ( $checkbox_by_section[ $section ] as $k ) {
@@ -210,6 +213,9 @@ class PG_Settings {
 			'leads'     => __( 'Incomplete & Checkout', 'product-glide' ),
 			'updates'   => __( 'Updates', 'product-glide' ),
 		);
+		if ( ! PG_Courier::enabled( 'carrybee' ) ) {
+			unset( $tabs['carrybee'] );
+		}
 		if ( ! isset( $tabs[ $tab ] ) ) {
 			$tab = 'general';
 		}
@@ -416,6 +422,11 @@ class PG_Settings {
 						self::field_textarea( 'shop_address', __( 'Shop address', 'product-glide' ), $s );
 						self::field_number( 'items_per_slip', __( 'Items per printed slip (larger orders continue on the next slip)', 'product-glide' ), $s );
 						self::field_number( 'pkg_delivery_charge', __( 'Default package delivery charge (BDT)', 'product-glide' ), $s );
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Couriers', 'product-glide' ) . '</h3>';
+						echo '<p class="pg-muted">' . esc_html__( 'Turn on the couriers you use. A courier that is off is hidden everywhere (Send buttons, courier choice, its menu and settings tab). Parcels already sent with it keep updating until they finish.', 'product-glide' ) . '</p>';
+						self::field_check( 'sf_enabled', __( 'Steadfast', 'product-glide' ), $s );
+						self::field_check( 'cb_enabled', __( 'Carrybee', 'product-glide' ), $s );
+						echo '<p class="pg-muted">' . esc_html__( 'The courier report (fraud check) keeps using the Steadfast keys even when Steadfast is off for sending.', 'product-glide' ) . '</p>';
 						break;
 				}
 				?>

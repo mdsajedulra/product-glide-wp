@@ -25,7 +25,9 @@ class PG_Admin {
 		add_submenu_page( 'product-glide', __( 'Screenshot Order', 'product-glide' ), __( 'Screenshot Order', 'product-glide' ), $cap, 'pg-ocr', array( __CLASS__, 'page_ocr' ) );
 		add_submenu_page( 'product-glide', __( 'Profit & Stock', 'product-glide' ), __( 'Profit & Stock', 'product-glide' ), 'manage_options', 'pg-profit', array( __CLASS__, 'page_profit' ) );
 		add_submenu_page( 'product-glide', __( 'Team', 'product-glide' ), __( 'Team', 'product-glide' ), 'manage_options', 'pg-team', array( __CLASS__, 'page_team' ) );
-		add_submenu_page( 'product-glide', __( 'Steadfast Tools', 'product-glide' ), __( 'Steadfast Tools', 'product-glide' ), 'manage_options', 'pg-steadfast', array( __CLASS__, 'page_steadfast' ) );
+		if ( PG_Courier::enabled( 'steadfast' ) ) {
+			add_submenu_page( 'product-glide', __( 'Steadfast Tools', 'product-glide' ), __( 'Steadfast Tools', 'product-glide' ), 'manage_options', 'pg-steadfast', array( __CLASS__, 'page_steadfast' ) );
+		}
 		add_submenu_page( 'product-glide', __( 'Settings', 'product-glide' ), __( 'Settings', 'product-glide' ), 'manage_options', 'pg-settings', array( 'PG_Settings', 'render' ) );
 		add_submenu_page( 'product-glide', __( 'Open Order Hub', 'product-glide' ), __( 'Open Order Hub ↗', 'product-glide' ), $cap, 'pg-open-hub', '__return_null' );
 		global $submenu;
@@ -95,7 +97,7 @@ class PG_Admin {
 				'site'    => wp_parse_url( home_url(), PHP_URL_HOST ),
 			),
 			'sfReady'     => PG_Steadfast_API::configured(),
-			'cbReady'     => PG_Carrybee_API::ready(),
+			'cbReady'     => PG_Courier::ready( 'carrybee' ),
 			'couriers'    => PG_Courier::available(),
 			'courier'     => PG_Courier::default_courier(),
 			'waReady'     => PG_WhatsApp::configured(),

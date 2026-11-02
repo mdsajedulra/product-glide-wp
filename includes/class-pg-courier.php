@@ -26,7 +26,21 @@ class PG_Courier {
 		return 'carrybee' === $p ? 'Carrybee' : 'SteadFast Courier LTD';
 	}
 
+	/** Turned on in Settings → General → Couriers. */
+	public static function enabled( $p ) {
+		if ( 'carrybee' === $p ) {
+			return (bool) PG_Settings::get( 'cb_enabled', 1 );
+		}
+		if ( 'steadfast' === $p ) {
+			return (bool) PG_Settings::get( 'sf_enabled', 1 );
+		}
+		return false;
+	}
+
 	public static function ready( $p ) {
+		if ( ! self::enabled( $p ) ) {
+			return false;
+		}
 		if ( 'carrybee' === $p ) {
 			return PG_Carrybee_API::ready();
 		}
@@ -76,8 +90,8 @@ class PG_Courier {
 			return new WP_Error(
 				'pg_courier_off',
 				'carrybee' === $provider
-					? __( 'Carrybee is not set up yet (Settings → Carrybee: keys and pickup store).', 'product-glide' )
-					: __( 'Steadfast API keys are not set (Settings → Steadfast).', 'product-glide' )
+					? ( self::enabled( 'carrybee' ) ? __( 'Carrybee is not set up yet (Settings → Carrybee: keys and pickup store).', 'product-glide' ) : __( 'Carrybee is turned off (Settings → General → Couriers).', 'product-glide' ) )
+					: ( self::enabled( 'steadfast' ) ? __( 'Steadfast API keys are not set (Settings → Steadfast).', 'product-glide' ) : __( 'Steadfast is turned off (Settings → General → Couriers).', 'product-glide' ) )
 			);
 		}
 		$res = 'carrybee' === $provider ? PG_Carrybee::book( $order, $over ) : PG_Steadfast::book( $order, $over );
