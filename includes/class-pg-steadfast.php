@@ -202,9 +202,29 @@ class PG_Steadfast {
 		if ( ! $order ) {
 			wp_send_json_error( array( 'message' => __( 'Order not found', 'product-glide' ) ) );
 		}
+		$courier = sanitize_key( PG_Helpers::post( 'courier', 'steadfast' ) );
 		$existing = self::active( $order->get_id() );
 		if ( $existing && 'cancelled' !== $existing->courier_status ) {
-			wp_send_json_error( array( 'message' => sprintf( /* translators: cid */ __( 'Already booked (CID %s). Void it first to resend.', 'product-glide' ), $existing->consignment_id ) ) );
+			wp_send_json_error( array( 'message' => sprintf( /* translators: 1 courier 2 cid */ __( 'Already booked with %1$s (CID %2$s). Void it first to resend.', 'product-glide' ), PG_Courier::label( $existing->provider ), $existing->consignment_id ) ) );
+		}
+		if ( 'carrybee' === $courier ) {
+			$c = PG_Courier::book(
+				$order,
+				'carrybee',
+				array(
+					'cod_amount' => isset( $_POST['cod_amount'] ) && '' !== $_POST['cod_amount'] ? (float) $_POST['cod_amount'] : '', // phpcs:ignore
+					'note'       => PG_Helpers::post_textarea( 'note', '' ),
+				)
+			);
+			if ( is_wp_error( $c ) ) {
+				wp_send_json_error( array( 'message' => $c->get_error_message() ) );
+			}
+			wp_send_json_success(
+				array(
+					'message' => sprintf( /* translators: cid */ __( 'Booked with Carrybee! CID %s', 'product-glide' ), $c['consignment_id'] ),
+					'order'   => PG_Orders::order_card_data( wc_get_order( $order->get_id() ) ),
+				)
+			);
 		}
 		if ( $existing ) {
 			// Previous parcel was cancelled by courier: archive it and resend with a new suffix.
@@ -248,6 +268,9 @@ class PG_Steadfast {
 		$ids = array_slice( array_filter( array_map( 'absint', (array) PG_Helpers::post( 'order_ids', array() ) ) ), 0, 500 );
 		if ( ! $ids ) {
 			wp_send_json_error( array( 'message' => __( 'Select at least one order.', 'product-glide' ) ) );
+		}
+		if ( 'carrybee' === sanitize_key( PG_Helpers::post( 'courier', 'steadfast' ) ) ) {
+			self::bulk_carrybee( $ids );
 		}
 		$results  = array();
 		$payloads = array();
@@ -303,6 +326,31 @@ class PG_Steadfast {
 		wp_send_json_success( array( 'results' => $results ) );
 	}
 
+	/** Carrybee has no bulk call that answers right away, so book one by one (time-boxed). */
+	private static function bulk_carrybee( array $ids ) {
+		if ( ! PG_Carrybee_API::ready() ) {
+			wp_send_json_error( array( 'message' => __( 'Carrybee is not set up yet (Settings → Carrybee).', 'product-glide' ) ) );
+		}
+		$results = array();
+		$t0      = microtime( true );
+		foreach ( $ids as $id ) {
+			if ( microtime( true ) - $t0 > 40 ) {
+				$results[] = array( 'order_id' => $id, 'ok' => false, 'errors' => array( __( 'Not sent — time limit reached. Select the rest and send again.', 'product-glide' ) ) );
+				continue;
+			}
+			$order = wc_get_order( $id );
+			if ( ! $order ) {
+				$results[] = array( 'order_id' => $id, 'ok' => false, 'errors' => array( __( 'Order not found', 'product-glide' ) ) );
+				continue;
+			}
+			$c = PG_Courier::book( $order, 'carrybee' );
+			$results[] = is_wp_error( $c )
+				? array( 'order_id' => $id, 'ok' => false, 'errors' => array( $c->get_error_message() ) )
+				: array( 'order_id' => $id, 'ok' => true, 'tracking_code' => $c['consignment_id'], 'errors' => array() );
+		}
+		wp_send_json_success( array( 'results' => $results ) );
+	}
+
 	/** Void a parcel locally (after cancelling it in the Steadfast portal) so it can be resent. */
 	public static function ajax_void() {
 		PG_Helpers::guard_ajax();
@@ -314,13 +362,23 @@ class PG_Steadfast {
 		if ( ! $row ) {
 			wp_send_json_error( array( 'message' => __( 'No active consignment on this order.', 'product-glide' ) ) );
 		}
+		$label = PG_Courier::label( $row->provider );
+		if ( 'carrybee' === $row->provider && 'cancelled' !== $row->courier_status && ! PG_Helpers::post_int( 'force' ) ) {
+			$res = PG_Carrybee::cancel( $row, PG_Helpers::post_textarea( 'reason', '' ) );
+			if ( is_wp_error( $res ) ) {
+				wp_send_json_error( array( 'message' => sprintf( /* translators: error */ __( 'Carrybee did not cancel the parcel: %s', 'product-glide' ), $res->get_error_message() ), 'can_force' => true ) );
+			}
+			$order->add_order_note( sprintf( 'Carrybee parcel %s cancelled via API.', $row->consignment_id ) );
+		}
 		self::update( $row->id, array( 'is_active' => 0, 'courier_status' => 'voided', 'final_at' => PG_Helpers::now_utc() ) );
 		$order->update_meta_data( '_pg_sf_resend_count', (int) $order->get_meta( '_pg_sf_resend_count' ) + 1 );
 		$order->delete_meta_data( '_pg_sf_cid' );
 		$order->delete_meta_data( '_pg_sf_tracking' );
 		$order->update_meta_data( '_pg_sf_status', 'voided' );
 		$order->save();
-		$order->add_order_note( sprintf( 'Steadfast consignment %s voided in Product Glide. Next booking will use invoice %s.', $row->consignment_id, self::invoice_for( $order ) ) );
+		$order->delete_meta_data( '_pg_cb_cid' );
+		$order->save();
+		$order->add_order_note( sprintf( '%s consignment %s voided in Product Glide. Next booking will use invoice %s.', $label, $row->consignment_id, self::invoice_for( $order ) ) );
 		$order->update_status( 'processing', __( 'Courier booking voided.', 'product-glide' ) );
 		wp_send_json_success( array( 'message' => __( 'Voided. Order is back to Processing.', 'product-glide' ), 'order' => PG_Orders::order_card_data( wc_get_order( $order->get_id() ) ) ) );
 	}
@@ -331,6 +389,14 @@ class PG_Steadfast {
 		$row   = $order ? self::active( $order->get_id() ) : null;
 		if ( ! $row ) {
 			wp_send_json_error( array( 'message' => __( 'No active consignment on this order.', 'product-glide' ) ) );
+		}
+		if ( 'carrybee' === $row->provider ) {
+			$r = PG_Carrybee::fetch_status( $row );
+			if ( is_wp_error( $r ) ) {
+				wp_send_json_error( array( 'message' => $r->get_error_message() ) );
+			}
+			PG_Carrybee::apply( $row, $r[0], $r[1] );
+			wp_send_json_success( array( 'message' => 'Carrybee: ' . ( $r[2] ? $r[2] : $r[0] ), 'order' => PG_Orders::order_card_data( wc_get_order( $order->get_id() ) ) ) );
 		}
 		$data = PG_Steadfast_API::status_by_cid( $row->consignment_id );
 		if ( is_wp_error( $data ) ) {
@@ -408,7 +474,7 @@ class PG_Steadfast {
 			$order->save();
 		}
 		if ( $target && $order->get_status() !== $target ) {
-			$msg = sprintf( 'Steadfast status: %s', $status );
+			$msg = sprintf( '%s status: %s', PG_Courier::label( isset( $row->provider ) ? $row->provider : 'steadfast' ), $status );
 			if ( ! empty( $extra['tracking_message'] ) ) {
 				$msg .= ' — ' . $extra['tracking_message'];
 			}
@@ -709,15 +775,28 @@ class PG_Steadfast {
 				break; // Keep the request well inside PHP time limits; the rest go next time.
 			}
 			$out['checked']++;
-			$data = PG_Steadfast_API::status_by_cid( $row->consignment_id );
-			if ( is_wp_error( $data ) || empty( $data['delivery_status'] ) ) {
-				$out['errors']++;
-				self::update( $row->id, array() ); // bump updated_at so it moves to the back of the queue
-				continue;
-			}
-			$new = strtolower( (string) $data['delivery_status'] );
 			$old = (string) $row->courier_status;
-			self::apply_status( $row, $new, array( 'tracking_message' => '' ) );
+			if ( 'carrybee' === $row->provider ) {
+				$r = PG_Carrybee_API::configured() ? PG_Carrybee::fetch_status( $row ) : new WP_Error( 'off', 'off' );
+				if ( is_wp_error( $r ) || '' === $r[0] ) {
+					if ( is_wp_error( $r ) ) {
+						$out['errors']++;
+					}
+					self::update( $row->id, array() );
+					continue;
+				}
+				$new = $r[0];
+				PG_Carrybee::apply( $row, $new, $r[1] );
+			} else {
+				$data = PG_Steadfast_API::configured() ? PG_Steadfast_API::status_by_cid( $row->consignment_id ) : new WP_Error( 'off', 'off' );
+				if ( is_wp_error( $data ) || empty( $data['delivery_status'] ) ) {
+					$out['errors']++;
+					self::update( $row->id, array() ); // bump updated_at so it moves to the back of the queue
+					continue;
+				}
+				$new = strtolower( (string) $data['delivery_status'] );
+				self::apply_status( $row, $new, array( 'tracking_message' => '' ) );
+			}
 			if ( $new !== $old ) {
 				$out['changed']++;
 				$out['changes'][] = array( 'order_id' => (int) $row->order_id, 'from' => $old, 'to' => $new );
@@ -731,15 +810,15 @@ class PG_Steadfast {
 	}
 
 	public static function cron_sync() {
-		if ( PG_Steadfast_API::configured() ) {
+		if ( PG_Steadfast_API::configured() || PG_Carrybee_API::configured() ) {
 			self::sync_active( 60 );
 		}
 	}
 
 	public static function ajax_sync() {
 		PG_Helpers::guard_ajax();
-		if ( ! PG_Steadfast_API::configured() ) {
-			wp_send_json_error( array( 'message' => __( 'Steadfast API keys are not set.', 'product-glide' ) ) );
+		if ( ! PG_Steadfast_API::configured() && ! PG_Carrybee_API::configured() ) {
+			wp_send_json_error( array( 'message' => __( 'No courier API keys are set.', 'product-glide' ) ) );
 		}
 		$ids = array_filter( array_map( 'absint', (array) PG_Helpers::post( 'order_ids', array() ) ) );
 		$res = self::sync_active( 40, $ids );

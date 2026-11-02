@@ -295,6 +295,8 @@
 			return { product_id: it.product_id, name: it.name, qty: it.qty, price: it.price, thumb: it.thumb };
 		});
 		var delivery = x.shipping > 0 ? x.shipping : (cfg.pkgDelivery || 0);
+		var CS = cfg.couriers && !Array.isArray(cfg.couriers) ? cfg.couriers : {}, cks = Object.keys(CS);
+		var defC = CS[cfg.courier] ? cfg.courier : cks[0];
 		var risk = '';
 		if (x.fraud && x.fraud.verdict && x.fraud.verdict.level !== 'safe' && x.fraud.verdict.level !== 'new') {
 			risk = '<div class="pg-alert pg-alert-' + (x.fraud.verdict.level === 'risky' ? 'bad' : 'warn') + '">' + esc(x.fraud.verdict.title) + ' — ' + esc(x.fraud.verdict.advice) + '</div>';
@@ -325,14 +327,18 @@
 			'</div>' +
 			'<div class="pg-card"><div class="pg-card-head"><h2>Add products</h2></div><div data-picker></div></div>' +
 			'<div class="pg-card pg-lead-sf"><div class="pg-card-head"><h2>Courier</h2></div>' +
-				(cfg.sfReady ?
-					'<label class="pg-check"><input type="checkbox" data-sf checked> Send to Steadfast right away (status becomes Courier Sent)</label>' +
-					'<div class="pg-grid pg-grid-2" data-sf-box style="margin-top:10px">' +
+				(cks.length ?
+					'<label class="pg-check"><input type="checkbox" data-sf checked> Send to the courier right away (status becomes Courier Sent)</label>' +
+					'<div data-sf-box style="margin-top:10px">' +
+					(cks.length > 1 ? '<div class="pg-field"><label>Courier</label><div class="pg-courier-pick">' + cks.map(function (c) {
+						return '<label class="pg-check pg-courier-opt"><input type="radio" name="pg-lead-courier" value="' + esc(c) + '"' + (c === defC ? ' checked' : '') + '> ' + esc(CS[c]) + '</label>';
+					}).join('') + '</div></div>' : '<p class="pg-muted" style="margin:0 0 8px">Courier: <b>' + esc(CS[cks[0]]) + '</b></p>') +
+					'<div class="pg-grid pg-grid-2">' +
 						'<div class="pg-field"><label>COD amount (৳) — what the customer pays</label><input type="number" min="0" step="1" data-cod></div>' +
 						'<div class="pg-field"><label>Note for the rider</label><input type="text" data-sf-note placeholder="optional"></div>' +
-					'</div>' +
+					'</div></div>' +
 					'<p class="pg-muted">Untick to keep the order in Processing and send it later from the Orders page.</p>'
-					: '<p class="pg-muted">Steadfast is not set up — the order will go to Processing.</p>') +
+					: '<p class="pg-muted">No courier is set up — the order will go to Processing.</p>') +
 			'</div>' +
 			'</div>' +
 			'<div class="pg-form-actions pg-edit-actions"><button type="button" class="pg-btn" data-close>Back</button><button type="button" class="pg-btn pg-btn-primary" data-save>✓ Create order</button></div>',
@@ -403,7 +409,7 @@
 				id: id, customer: cust,
 				items: items.map(function (it) { return { product_id: it.product_id, qty: it.qty, price: it.price }; }),
 				discount: body.querySelector('[data-discount]').value, delivery: body.querySelector('[data-delivery]').value,
-				send_sf: sf && sf.checked ? 1 : 0, cod: $cod ? $cod.value : '', sf_note: sf && sf.checked ? body.querySelector('[data-sf-note]').value : ''
+				send_sf: sf && sf.checked ? 1 : 0, courier: (body.querySelector('input[name="pg-lead-courier"]:checked') || {}).value || defC || '', cod: $cod ? $cod.value : '', sf_note: sf && sf.checked ? body.querySelector('[data-sf-note]').value : ''
 			}).then(function (d) {
 				A.toast(d.message, 'ok');
 				if (d.warning) { A.toast(d.warning, 'bad'); }

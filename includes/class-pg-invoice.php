@@ -345,6 +345,7 @@ foreach ( $orders as $o ) :
 	$address = implode( ', ', self::bill_to( $o ) );
 	$cons    = class_exists( 'PG_Steadfast' ) ? PG_Steadfast::active( $o->get_id() ) : null;
 	$cid     = $cons && 'cancelled' !== $cons->courier_status ? $cons->consignment_id : '';
+	$prov    = $cons && $cons->provider ? $cons->provider : ( class_exists( 'PG_Courier' ) ? PG_Courier::default_courier() : 'steadfast' );
 	$cod     = $cid ? (float) $cons->cod_amount : ( class_exists( 'PG_Steadfast' ) ? PG_Steadfast::default_cod( $o ) : (float) $o->get_total() );
 	?>
 <section class="cs-page<?php echo count( $o->get_items() ) + count( $o->get_fees() ) + ( (float) $o->get_total_discount() > 0 ? 1 : 0 ) + ( $o->get_customer_note() ? 1 : 0 ) > 4 ? ' cs-long' : ''; ?>">
@@ -379,8 +380,8 @@ foreach ( $orders as $o ) :
 
 		<div class="cs-courier">
 			<div class="cs-courier-row">
-				<b class="cs-courier-name">For SteadFast Courier LTD</b>
-				<span class="cs-courier-brand"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9Zm9 2.2 6.2-3.1L12 3.5 5.8 6.6 12 9.7Zm-7.6-2v8.1l6.9 3.5v-8.1L4.4 7.7Z"/></svg>steadfast</span>
+				<b class="cs-courier-name">For <?php echo esc_html( PG_Courier::company( $prov ) ); ?></b>
+				<span class="cs-courier-brand cs-courier-<?php echo esc_attr( $prov ); ?>"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9Zm9 2.2 6.2-3.1L12 3.5 5.8 6.6 12 9.7Zm-7.6-2v8.1l6.9 3.5v-8.1L4.4 7.7Z"/></svg><?php echo esc_html( strtolower( PG_Courier::label( $prov ) ) ); ?></span>
 			</div>
 			<div class="cs-courier-row cs-courier-big">
 				<span>CN ID: <?php echo $cid ? '#' . esc_html( $cid ) : '<i>not booked yet</i>'; ?></span>

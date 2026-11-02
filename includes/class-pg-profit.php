@@ -256,7 +256,10 @@ class PG_Profit {
 		$products      = array();
 		foreach ( $orders as $o ) {
 			$c = isset( $consigns[ $o->get_id() ] ) ? $consigns[ $o->get_id() ] : null;
-			if ( 'steadfast' === $courier && ! $c ) {
+			if ( in_array( $courier, array( 'steadfast', 'carrybee' ), true ) && ( ! $c || ( $c->provider ? $c->provider : 'steadfast' ) !== $courier ) ) {
+				continue;
+			}
+			if ( 'any' === $courier && ! $c ) {
 				continue;
 			}
 			if ( 'none' === $courier && $c ) {
@@ -293,7 +296,8 @@ class PG_Profit {
 		$parcels          = array( 'delivered' => 0, 'cancelled' => 0, 'transit' => 0 );
 		if ( 'none' !== $courier ) {
 			$t    = PG_Install::table( 'consignments' );
-			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT courier_status, delivery_charge FROM {$t} WHERE created_at >= %s AND created_at < %s AND courier_status <> 'voided'", $s_utc, $e_utc ) ); // phpcs:ignore
+			$only = in_array( $courier, array( 'steadfast', 'carrybee' ), true ) ? $wpdb->prepare( ' AND provider = %s', $courier ) : '';
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT courier_status, delivery_charge FROM {$t} WHERE created_at >= %s AND created_at < %s AND courier_status <> 'voided'", $s_utc, $e_utc ) . $only ); // phpcs:ignore
 			$fd   = (float) PG_Settings::get( 'fallback_delivery', 70 );
 			$fr   = (float) PG_Settings::get( 'fallback_return', 70 );
 			foreach ( $rows as $r ) {

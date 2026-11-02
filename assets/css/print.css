@@ -94,6 +94,7 @@ body { font-family: "Helvetica Neue", Helvetica, Arial, "Noto Sans Bengali", "Ka
 .cs-courier-name { font-size: 12pt; }
 .cs-courier-brand { display: inline-flex; align-items: center; gap: 1.5mm; color: #16a34a; font-weight: 800; font-size: 12pt; letter-spacing: -.2px; }
 .cs-courier-brand svg { width: 18px; height: 18px; }
+.cs-courier-brand.cs-courier-carrybee { color: #d97706; }
 .cs-courier-big { font-size: 13pt; font-weight: 700; }
 .cs-courier-big i { font-weight: 500; font-size: 10.5pt; color: #6b7280; }
 

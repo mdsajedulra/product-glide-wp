@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_Settings {
 
-	const SECRET_KEYS = array( 'sf_api_key', 'sf_secret_key', 'wa_token', 'or_key' );
+	const SECRET_KEYS = array( 'sf_api_key', 'sf_secret_key', 'wa_token', 'or_key', 'cb_client_secret', 'cb_client_context' );
 
 	public static function init() {
 		add_action( 'admin_post_pg_save_settings', array( __CLASS__, 'save' ) );
@@ -41,6 +41,19 @@ class PG_Settings {
 			'sf_webhook_token'    => '',
 			'sf_default_note'     => '',
 			'sf_item_desc'        => 1,
+			// Carrybee.
+			'cb_env'              => 'production',
+			'cb_client_id'        => '',
+			'cb_client_secret'    => '',
+			'cb_client_context'   => '',
+			'cb_store_id'         => '',
+			'cb_delivery_type'    => 1,
+			'cb_product_type'     => 1,
+			'cb_item_weight'      => 500,
+			'cb_auto_area'        => 1,
+			'cb_default_note'     => '',
+			'cb_webhook_secret'   => '',
+			'default_courier'     => 'steadfast',
 			// Fraud.
 			'fraud_auto'          => 1,
 			'fraud_cache_hours'   => 24,
@@ -96,7 +109,7 @@ class PG_Settings {
 		$defs = self::defaults();
 		$in   = wp_unslash( $_POST ); // phpcs:ignore
 
-		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo' );
+		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret' );
 		foreach ( $text_keys as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = in_array( $k, array( 'logo_url', 'sf_base_url', 'inv_logo' ), true ) ? esc_url_raw( trim( $in[ $k ] ) ) : sanitize_text_field( $in[ $k ] );
@@ -105,6 +118,17 @@ class PG_Settings {
 		if ( isset( $in['inv_template'] ) ) {
 			$tpl                 = sanitize_key( $in['inv_template'] );
 			$new['inv_template'] = isset( PG_Invoice::templates()[ $tpl ] ) ? $tpl : 'classic';
+		}
+		if ( isset( $in['cb_env'] ) ) {
+			$new['cb_env'] = 'sandbox' === $in['cb_env'] ? 'sandbox' : 'production';
+		}
+		foreach ( array( 'cb_delivery_type' => array( 1, 2 ), 'cb_product_type' => array( 1, 2, 3 ) ) as $k => $ok ) {
+			if ( isset( $in[ $k ] ) ) {
+				$new[ $k ] = in_array( (int) $in[ $k ], $ok, true ) ? (int) $in[ $k ] : $ok[0];
+			}
+		}
+		if ( isset( $in['default_courier'] ) ) {
+			$new['default_courier'] = isset( PG_Courier::all()[ $in['default_courier'] ] ) ? $in['default_courier'] : 'steadfast';
 		}
 		if ( isset( $in['inv_page_size'] ) ) {
 			$size                 = sanitize_key( $in['inv_page_size'] );
@@ -115,7 +139,7 @@ class PG_Settings {
 				$new[ $k ] = sanitize_textarea_field( $in[ $k ] );
 			}
 		}
-		foreach ( array( 'items_per_slip', 'fraud_cache_hours', 'lead_minutes', 'lead_keep_days', 'block_max', 'block_hours' ) as $k ) {
+		foreach ( array( 'items_per_slip', 'fraud_cache_hours', 'lead_minutes', 'lead_keep_days', 'block_max', 'block_hours', 'cb_item_weight' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
@@ -138,6 +162,7 @@ class PG_Settings {
 			'fraud'     => array( 'fraud_auto' ),
 			'whatsapp'  => array( 'wa_auto' ),
 			'leads'     => array( 'lead_enabled', 'guard_bd_phone', 'block_repeat' ),
+			'carrybee'  => array( 'cb_auto_area' ),
 		);
 		if ( isset( $checkbox_by_section[ $section ] ) ) {
 			foreach ( $checkbox_by_section[ $section ] as $k ) {
@@ -177,6 +202,7 @@ class PG_Settings {
 			'general'   => __( 'General', 'product-glide' ),
 			'invoice'   => __( 'Invoice', 'product-glide' ),
 			'steadfast' => __( 'Steadfast', 'product-glide' ),
+			'carrybee'  => __( 'Carrybee', 'product-glide' ),
 			'fraud'     => __( 'Fraud Check', 'product-glide' ),
 			'whatsapp'  => __( 'WhatsApp', 'product-glide' ),
 			'ai'        => __( 'AI / OCR', 'product-glide' ),
@@ -222,6 +248,38 @@ class PG_Settings {
 							<label class="pg-check"><input type="checkbox" name="regen_webhook_token" value="1"> <?php esc_html_e( 'Generate a new token on save', 'product-glide' ); ?></label>
 						</div>
 						<?php
+						break;
+					case 'carrybee':
+						$cb_ready = PG_Carrybee_API::configured();
+						echo '<p class="pg-muted">' . esc_html__( 'Get the three keys from the Carrybee merchant panel → API Credentials. Sandbox and Production have different keys.', 'product-glide' ) . '</p>';
+						self::field_select( 'cb_env', __( 'Environment', 'product-glide' ), $s, array( 'production' => 'Production (real parcels)', 'sandbox' => 'Sandbox (testing)' ) );
+						self::field_text( 'cb_client_id', __( 'Client-ID', 'product-glide' ), $s );
+						self::field_secret( 'cb_client_secret', __( 'Client-Secret', 'product-glide' ), $s );
+						self::field_secret( 'cb_client_context', __( 'Client-Context', 'product-glide' ), $s );
+						echo '<div class="pg-field"><button type="button" class="pg-btn" id="pg-cb-test"' . ( $cb_ready ? '' : ' disabled title="' . esc_attr__( 'Save the keys first', 'product-glide' ) . '"' ) . '>' . esc_html__( 'Test connection', 'product-glide' ) . '</button> <span class="pg-muted" id="pg-cb-test-out"></span></div>';
+						?>
+						<div class="pg-field">
+							<label for="pg-cb_store_id"><?php esc_html_e( 'Pickup store (parcels are picked up from here)', 'product-glide' ); ?></label>
+							<div class="pg-copyrow"><input type="text" id="pg-cb_store_id" name="cb_store_id" value="<?php echo esc_attr( $s['cb_store_id'] ); ?>" placeholder="<?php esc_attr_e( 'Store ID', 'product-glide' ); ?>"><button type="button" class="pg-btn pg-btn-ghost" id="pg-cb-stores"<?php disabled( ! $cb_ready ); ?>><?php esc_html_e( 'Load my stores', 'product-glide' ); ?></button></div>
+							<div id="pg-cb-store-list"></div>
+							<details class="pg-cb-newstore"<?php echo $cb_ready ? '' : ' hidden'; ?>><summary><?php esc_html_e( 'No store yet? Create one', 'product-glide' ); ?></summary><div id="pg-cb-store-form"></div></details>
+						</div>
+						<?php
+						self::field_select( 'cb_delivery_type', __( 'Delivery type', 'product-glide' ), $s, array( 1 => 'Normal', 2 => 'Express' ) );
+						self::field_select( 'cb_product_type', __( 'Product type', 'product-glide' ), $s, array( 1 => 'Parcel', 2 => 'Book', 3 => 'Document' ) );
+						self::field_number( 'cb_item_weight', __( 'Default parcel weight (grams) — used when products have no weight set', 'product-glide' ), $s );
+						self::field_check( 'cb_auto_area', __( 'Find city / zone from the customer address automatically', 'product-glide' ), $s );
+						self::field_text( 'cb_default_note', __( 'Default rider note (added before the customer note)', 'product-glide' ), $s );
+						self::field_select( 'default_courier', __( 'Courier picked first when you press Send', 'product-glide' ), $s, PG_Courier::all() );
+						$url = PG_Carrybee::webhook_url();
+						?>
+						<div class="pg-field">
+							<label><?php esc_html_e( 'Webhook URL (paste in Carrybee panel → Webhook Integration)', 'product-glide' ); ?></label>
+							<div class="pg-copyrow"><input type="text" readonly value="<?php echo esc_attr( $url ); ?>"><button type="button" class="pg-btn pg-btn-ghost" data-copy="<?php echo esc_attr( $url ); ?>"><?php esc_html_e( 'Copy', 'product-glide' ); ?></button></div>
+						</div>
+						<?php
+						self::field_text( 'cb_webhook_secret', __( 'Webhook secret (X-CB-Webhook-Integration-Header) — saved automatically on the first webhook; you can also paste it', 'product-glide' ), $s );
+						echo '<p class="pg-muted">' . esc_html__( 'Status updates arrive by webhook. Parcels in transit are also re-checked every 30 minutes and with the "Sync courier" button.', 'product-glide' ) . '</p>';
 						break;
 					case 'fraud':
 						self::field_check( 'fraud_auto', __( 'Auto-check delivery success score when an order is opened', 'product-glide' ), $s );

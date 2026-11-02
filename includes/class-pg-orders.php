@@ -109,7 +109,10 @@ class PG_Orders {
 				'invoice'  => $c->invoice,
 				'cod'      => (float) $c->cod_amount,
 				'message'  => (string) $c->tracking_message,
-				'url'      => $c->tracking_code ? PG_Steadfast::TRACK_URL . rawurlencode( $c->tracking_code ) : '',
+				'url'      => PG_Courier::tracking_url( $c->provider, $c->tracking_code ),
+				'provider' => $c->provider ? $c->provider : 'steadfast',
+				'label'    => PG_Courier::label( $c->provider ? $c->provider : 'steadfast' ),
+				'charge'   => null === $c->delivery_charge ? null : (float) $c->delivery_charge,
 				'sent_at'  => PG_Helpers::bd_time( $c->created_at ),
 			) : null,
 			'next_invoice'  => PG_Steadfast::invoice_for( $order ),
@@ -444,7 +447,7 @@ class PG_Orders {
 				'items'        => PG_Helpers::items_text( $o ),
 				'name'         => PG_Helpers::order_name( $o ),
 				'address'      => PG_Helpers::order_address( $o ),
-				'courier'      => $c ? $c->courier_status . ( $c->tracking_code ? ' · ' . $c->tracking_code : '' ) : '',
+				'courier'      => $c ? PG_Courier::label( $c->provider ) . ' · ' . $c->courier_status . ( $c->tracking_code ? ' · ' . $c->tracking_code : '' ) : '',
 				'notes'        => array_slice( $notes, 0, 5 ),
 				'edit_url'     => $o->get_edit_order_url(),
 			);
@@ -639,7 +642,8 @@ class PG_Orders {
 
 		$warn = '';
 		if ( $c_row && abs( (float) $c_row->cod_amount - PG_Steadfast::default_cod( $order ) ) > 0.5 ) {
-			$warn = sprintf( /* translators: amounts */ __( 'Already booked with Steadfast at COD %1$s. Update the COD to %2$s in the Steadfast panel too.', 'product-glide' ), wc_format_decimal( $c_row->cod_amount, 0 ), wc_format_decimal( PG_Steadfast::default_cod( $order ), 0 ) );
+			$lbl  = PG_Courier::label( $c_row->provider );
+			$warn = sprintf( /* translators: 1 courier 2 amount 3 amount 4 courier */ __( 'Already booked with %1$s at COD %2$s. Update the COD to %3$s in the %4$s panel too.', 'product-glide' ), $lbl, wc_format_decimal( $c_row->cod_amount, 0 ), wc_format_decimal( PG_Steadfast::default_cod( $order ), 0 ), $lbl );
 		}
 		wp_send_json_success(
 			array(

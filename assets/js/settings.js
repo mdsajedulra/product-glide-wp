@@ -3,6 +3,94 @@
 	'use strict';
 	var A = window.PGA, esc = A.esc;
 
+	/* ---------- Carrybee ---------- */
+	var cbTest = document.getElementById('pg-cb-test');
+	if (cbTest) {
+		cbTest.addEventListener('click', function () {
+			var out = document.getElementById('pg-cb-test-out');
+			A.busy(cbTest, true);
+			out.textContent = '';
+			A.ajax('pg_cb_test', {}).then(function (d) { out.textContent = '✓ ' + d.message; renderStores(d.data); })
+				.catch(function (e) { out.textContent = '✕ ' + e.message; })
+				.finally(function () { A.busy(cbTest, false); });
+		});
+	}
+	function renderStores(list) {
+		var box = document.getElementById('pg-cb-store-list'), input = document.getElementById('pg-cb_store_id');
+		if (!box || !input) { return; }
+		if (!list || !list.length) { box.innerHTML = '<p class="pg-muted">No stores yet — create one below.</p>'; return; }
+		box.innerHTML = '<div class="pg-cb-stores">' + list.map(function (st) {
+			var bad = !st.is_active || st.is_approved === false;
+			return '<label class="pg-check pg-cb-store"><input type="radio" name="pg-cb-store-pick" value="' + esc(st.id) + '"' + (String(st.id) === input.value ? ' checked' : '') + '> ' +
+				'<span><b>' + esc(st.name) + '</b>' + (st.is_default_pickup_store ? ' <span class="pg-badge pg-badge-info">default pickup</span>' : '') +
+				(bad ? ' <span class="pg-badge pg-badge-warn">' + (st.is_approved === false ? 'waiting for approval' : 'inactive') + '</span>' : '') +
+				'<br><small class="pg-muted">' + esc(st.address || '') + ' · ' + esc(st.contact_person_number || '') + ' · ID ' + esc(st.id) + '</small></span></label>';
+		}).join('') + '</div><p class="pg-muted">Pick one, then press Save settings.</p>';
+		box.querySelectorAll('input[name="pg-cb-store-pick"]').forEach(function (r) {
+			r.addEventListener('change', function () { input.value = r.value; });
+		});
+		if (!input.value && list.length === 1) { input.value = list[0].id; box.querySelector('input').checked = true; }
+	}
+	var cbStores = document.getElementById('pg-cb-stores');
+	if (cbStores) {
+		cbStores.addEventListener('click', function () {
+			A.busy(cbStores, true);
+			A.ajax('pg_cb_stores', {}).then(function (d) { renderStores(d.data); })
+				.catch(function (e) { A.toast(e.message, 'bad'); })
+				.finally(function () { A.busy(cbStores, false); });
+		});
+	}
+	var cbForm = document.getElementById('pg-cb-store-form');
+	if (cbForm) {
+		var opened = false;
+		cbForm.closest('details').addEventListener('toggle', function () {
+			if (opened || !this.open) { return; }
+			opened = true;
+			cbForm.innerHTML =
+				'<div class="pg-grid pg-grid-2">' +
+					'<div class="pg-field"><label>Store name (3–30)</label><input type="text" data-s="name" maxlength="30"></div>' +
+					'<div class="pg-field"><label>Contact person (3–30)</label><input type="text" data-s="contact_person_name" maxlength="30"></div>' +
+					'<div class="pg-field"><label>Contact phone</label><input type="tel" data-s="contact_person_number"></div>' +
+					'<div class="pg-field"><label>Address (3–100)</label><input type="text" data-s="address" maxlength="100"></div>' +
+				'</div>' +
+				'<div class="pg-grid pg-grid-3">' +
+					'<div class="pg-field"><label>City</label><select data-s="city_id"><option value="">Loading…</option></select></div>' +
+					'<div class="pg-field"><label>Zone</label><select data-s="zone_id" disabled><option value="">—</option></select></div>' +
+					'<div class="pg-field"><label>Area</label><select data-s="area_id" disabled><option value="">—</option></select></div>' +
+				'</div>' +
+				'<button type="button" class="pg-btn pg-btn-primary" data-create>Create store</button> <span class="pg-muted" data-out></span>';
+			var sel = function (k) { return cbForm.querySelector('[data-s="' + k + '"]'); };
+			var fill = function (el, list) {
+				el.innerHTML = '<option value="">Choose…</option>' + list.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('');
+				el.disabled = false;
+			};
+			A.ajax('pg_cb_cities', {}).then(function (d) { fill(sel('city_id'), d.data); }).catch(function (e) { A.toast(e.message, 'bad'); });
+			sel('city_id').addEventListener('change', function () {
+				sel('zone_id').disabled = sel('area_id').disabled = true;
+				if (!this.value) { return; }
+				A.ajax('pg_cb_zones', { city_id: this.value }).then(function (d) { fill(sel('zone_id'), d.data); }).catch(function (e) { A.toast(e.message, 'bad'); });
+			});
+			sel('zone_id').addEventListener('change', function () {
+				sel('area_id').disabled = true;
+				if (!this.value) { return; }
+				A.ajax('pg_cb_areas', { city_id: sel('city_id').value, zone_id: this.value }).then(function (d) { fill(sel('area_id'), d.data); }).catch(function (e) { A.toast(e.message, 'bad'); });
+			});
+			cbForm.querySelector('[data-create]').addEventListener('click', function () {
+				var b = this, data = {};
+				cbForm.querySelectorAll('[data-s]').forEach(function (el) { data[el.getAttribute('data-s')] = el.value.trim(); });
+				if (!data.name || !data.contact_person_name || !data.contact_person_number || !data.address || !data.city_id || !data.zone_id || !data.area_id) {
+					A.toast('Fill in every field.', 'bad'); return;
+				}
+				A.busy(b, true);
+				A.ajax('pg_cb_create_store', data).then(function (d) {
+					cbForm.querySelector('[data-out]').textContent = d.message;
+					A.toast(d.message, 'ok');
+					return A.ajax('pg_cb_stores', {}).then(function (x) { renderStores(x.data); });
+				}).catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy(b, false); });
+			});
+		});
+	}
+
 	var odBtn = document.getElementById('pg-od-import');
 	if (odBtn) {
 		odBtn.addEventListener('click', function () {

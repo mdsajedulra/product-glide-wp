@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:       Product Glide - All-in-One WooCommerce Courier & Order Hub
- * Description:       Fast, mobile-friendly order dashboard with Steadfast courier, fraud check, invoice printing, package builder, WhatsApp Cloud API, profit tracking and screenshot order creator. Runs natively inside WordPress (no external REST round-trips for order work).
- * Version:           1.6.2
+ * Description:       Fast, mobile-friendly order dashboard with Steadfast and Carrybee courier, fraud check, invoice printing, package builder, WhatsApp Cloud API, profit tracking and screenshot order creator. Runs natively inside WordPress (no external REST round-trips for order work).
+ * Version:           1.7.0
  * Author:            Md Sajedul Islam
  * Text Domain:       product-glide
  * Requires PHP:      7.4
@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PG_VERSION', '1.6.2' );
+define( 'PG_VERSION', '1.7.0' );
 define( 'PG_DB_VERSION', '1.3.0' );
 define( 'PG_FILE', __FILE__ );
 define( 'PG_DIR', plugin_dir_path( __FILE__ ) );
@@ -24,6 +24,9 @@ require_once PG_DIR . 'includes/class-pg-settings.php';
 require_once PG_DIR . 'includes/class-pg-statuses.php';
 require_once PG_DIR . 'includes/class-pg-steadfast-api.php';
 require_once PG_DIR . 'includes/class-pg-steadfast.php';
+require_once PG_DIR . 'includes/class-pg-carrybee-api.php';
+require_once PG_DIR . 'includes/class-pg-carrybee.php';
+require_once PG_DIR . 'includes/class-pg-courier.php';
 require_once PG_DIR . 'includes/class-pg-fraud.php';
 require_once PG_DIR . 'includes/class-pg-orders.php';
 require_once PG_DIR . 'includes/class-pg-invoice.php';
@@ -77,6 +80,7 @@ add_action(
 		PG_Install::maybe_upgrade();
 		PG_Statuses::init();
 		PG_Steadfast::init();
+		PG_Carrybee::init();
 		PG_Fraud::init();
 		PG_Orders::init();
 		PG_Invoice::init();

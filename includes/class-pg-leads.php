@@ -608,7 +608,7 @@ class PG_Leads {
 				'status'      => 'converted',
 				'order_id'    => $order->get_id(),
 				'user_id'     => get_current_user_id(),
-				'staff_notes' => self::add_note( $row, sprintf( 'Confirmed → order #%s%s', $order->get_order_number(), PG_Helpers::post_int( 'send_sf' ) ? ' (Steadfast)' : '' ), 'status' ),
+				'staff_notes' => self::add_note( $row, sprintf( 'Confirmed → order #%s%s', $order->get_order_number(), PG_Helpers::post_int( 'send_sf' ) ? ' (' . PG_Courier::label( sanitize_key( PG_Helpers::post( 'courier', PG_Courier::default_courier() ) ) ) . ')' : '' ), 'status' ),
 				'updated_at'  => current_time( 'mysql', true ),
 			),
 			array( 'id' => (int) $row->id )
@@ -617,16 +617,14 @@ class PG_Leads {
 		$msg     = sprintf( /* translators: order no */ __( 'Order #%s created.', 'product-glide' ), $order->get_order_number() );
 		$warning = '';
 		if ( PG_Helpers::post_int( 'send_sf' ) ) {
-			if ( ! PG_Steadfast_API::configured() ) {
-				$warning = __( 'Steadfast is not set up — the order is in Processing. Send it from the Orders page.', 'product-glide' );
+			$courier = sanitize_key( PG_Helpers::post( 'courier', PG_Courier::default_courier() ) );
+			$label   = PG_Courier::label( $courier );
+			$cod     = PG_Helpers::post( 'cod', '' );
+			$res     = PG_Courier::book( wc_get_order( $order->get_id() ), $courier, array( 'cod_amount' => '' !== $cod ? (float) $cod : '', 'note' => PG_Helpers::post_textarea( 'sf_note', '' ) ) );
+			if ( is_wp_error( $res ) ) {
+				$warning = sprintf( /* translators: 1 courier 2 error */ __( 'Order created, but %1$s booking failed: %2$s. It is in Processing — send it again from the Orders page.', 'product-glide' ), $label, $res->get_error_message() );
 			} else {
-				$cod = PG_Helpers::post( 'cod', '' );
-				$res = PG_Steadfast::book( wc_get_order( $order->get_id() ), array( 'cod_amount' => '' !== $cod ? (float) $cod : '', 'note' => PG_Helpers::post_textarea( 'sf_note', '' ) ) );
-				if ( is_wp_error( $res ) ) {
-					$warning = sprintf( /* translators: error */ __( 'Order created, but Steadfast booking failed: %s. It is in Processing — send it again from the Orders page.', 'product-glide' ), $res->get_error_message() );
-				} else {
-					$msg .= ' ' . sprintf( /* translators: tracking */ __( 'Sent to Steadfast (tracking %s).', 'product-glide' ), $res['tracking_code'] );
-				}
+				$msg .= ' ' . sprintf( /* translators: 1 courier 2 tracking */ __( 'Sent to %1$s (%2$s).', 'product-glide' ), $label, $res['tracking_code'] );
 			}
 		}
 		wp_send_json_success(

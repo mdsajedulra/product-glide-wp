@@ -1,6 +1,6 @@
 # Product Glide (WordPress plugin)
 
-All-in-one WooCommerce order hub: Steadfast courier, fraud check, invoices, package builder,
+All-in-one WooCommerce order hub: Steadfast + Carrybee courier, fraud check, invoices, package builder,
 WhatsApp, profit & stock, screenshot order creator, team performance.
 
 ## Releasing an update to every site

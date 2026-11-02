@@ -37,7 +37,7 @@
 		'<div class="pg-card"><div class="pg-grid pg-grid-3">' +
 			'<div class="pg-field"><label>From</label><input type="date" data-f="from"></div>' +
 			'<div class="pg-field"><label>To</label><input type="date" data-f="to"></div>' +
-			'<div class="pg-field"><label>Courier</label><select data-f="courier"><option value="all">All orders</option><option value="steadfast">Steadfast only</option><option value="none">No courier</option></select></div>' +
+			'<div class="pg-field"><label>Courier</label><select data-f="courier"><option value="all">All orders</option><option value="any">Sent by courier</option><option value="steadfast">Steadfast only</option><option value="carrybee">Carrybee only</option><option value="none">No courier</option></select></div>' +
 		'</div><div class="pg-chips">' +
 			['today:Today', '7:Last 7 days', '30:Last 30 days', 'month:This month', 'last:Last month'].map(function (x) {
 				var p = x.split(':'); return '<button class="pg-chip" data-preset="' + p[0] + '">' + p[1] + '</button>';

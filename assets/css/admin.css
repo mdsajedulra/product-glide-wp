@@ -629,3 +629,14 @@ body.pg-front .pg-toasts { top: 70px; }
 .pg-app a.pg-btn-primary, .pg-app a.pg-btn-primary:hover, .pg-app a.pg-btn-primary:visited { color: #fff; }
 .pg-app a.pg-chipbtn, .pg-app a.pg-chipbtn:visited { color: var(--pg-ink-2); }
 .pg-app a.pg-chipbtn.call, .pg-app a.pg-chipbtn.call:visited { color: var(--pg-ok); }
+
+/* ===== Courier choice / Carrybee ===== */
+.pg-courier-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.pg-courier-opt { padding: 8px 12px; border: 1px solid var(--pg-line); border-radius: 10px; background: #fff; }
+.pg-courier-opt:has(input:checked) { border-color: var(--pg-primary-2); background: #eef2ff; }
+.pg-courier-carrybee > b { color: #b45309; }
+.pg-cb-stores { display: grid; gap: 8px; margin-top: 10px; }
+.pg-cb-store { align-items: flex-start; padding: 10px 12px; border: 1px solid var(--pg-line); border-radius: 10px; background: #fff; }
+.pg-cb-store input { margin-top: 3px; }
+.pg-cb-newstore { margin-top: 10px; }
+.pg-cb-newstore > summary { cursor: pointer; font-weight: 600; color: var(--pg-primary-2); margin-bottom: 8px; }

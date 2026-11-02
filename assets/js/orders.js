@@ -138,10 +138,14 @@
 	function courierHtml(o) {
 		var c = o.courier;
 		if (!c) { return ''; }
-		return '<div class="pg-courier"><b>Steadfast</b>' +
-			'<span>Status: <b>' + esc(c.status || 'in_review') + '</b></span>' +
-			(c.tracking ? '<span>Tracking: <a href="' + esc(c.url) + '" target="_blank" rel="noopener">' + esc(c.tracking) + '</a> <button class="pg-chipbtn" data-copy="' + esc(c.tracking) + '">Copy</button></span>' : '') +
-			'<span>CID: ' + esc(c.cid) + '</span><span>COD: ' + A.money(c.cod) + '</span>' +
+		var trk = '';
+		if (c.tracking && c.tracking !== c.cid) {
+			trk = '<span>Tracking: ' + (c.url ? '<a href="' + esc(c.url) + '" target="_blank" rel="noopener">' + esc(c.tracking) + '</a>' : esc(c.tracking)) + ' <button class="pg-chipbtn" data-copy="' + esc(c.tracking) + '">Copy</button></span>';
+		}
+		return '<div class="pg-courier pg-courier-' + esc(c.provider || 'steadfast') + '"><b>' + esc(c.label || 'Steadfast') + '</b>' +
+			'<span>Status: <b>' + esc(c.status || 'in_review') + '</b></span>' + trk +
+			'<span>CID: ' + esc(c.cid) + ' <button class="pg-chipbtn" data-copy="' + esc(c.cid) + '">Copy</button></span><span>COD: ' + A.money(c.cod) + '</span>' +
+			(c.charge !== null && c.charge !== undefined ? '<span>Charge: ' + A.money(c.charge) + '</span>' : '') +
 			(c.message ? '<span class="pg-muted">' + esc(c.message) + '</span>' : '') + '</div>';
 	}
 
@@ -160,10 +164,11 @@
 
 		var sfBtn;
 		if (o.courier && o.courier.status !== 'cancelled') {
-			sfBtn = '<button class="pg-btn" data-act="sf-refresh" title="Fetch the latest status from Steadfast">↻ Refresh status</button>' +
-				'<button class="pg-btn pg-btn-bad" data-act="sf-void" title="Use after cancelling the parcel in the Steadfast portal">Void / Resend</button>';
+			var cb = o.courier.provider === 'carrybee';
+			sfBtn = '<button class="pg-btn" data-act="sf-refresh" title="Fetch the latest status from ' + esc(o.courier.label) + '">↻ Refresh status</button>' +
+				'<button class="pg-btn pg-btn-bad" data-act="sf-void" title="' + (cb ? 'Cancel the parcel with Carrybee and free the order to resend' : 'Use after cancelling the parcel in the Steadfast portal') + '">' + (cb ? 'Cancel / Resend' : 'Void / Resend') + '</button>';
 		} else {
-			sfBtn = '<button class="pg-btn pg-btn-primary" data-act="sf-send">' + (o.courier ? 'Resend SF' : 'Send to SF') + '</button>';
+			sfBtn = '<button class="pg-btn pg-btn-primary" data-act="sf-send">' + (o.courier ? 'Resend' : 'Send') + ' to ' + esc(courierWord()) + '</button>';
 		}
 		var statusOpts = Object.keys(cfg.statuses).map(function (s) {
 			return '<option value="' + esc(s) + '"' + (s === o.status ? ' selected' : '') + '>' + esc(cfg.statuses[s]) + '</option>';
@@ -239,6 +244,7 @@
 			'<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' +
 				(cfg.canWoo ? '<a class="pg-btn pg-btn-sm" href="' + esc(o.edit_url) + '" target="_blank" rel="noopener">Open in WooCommerce ↗</a>' : '') +
 				(o.courier ? '<button class="pg-btn pg-btn-sm" data-act="sf-return">Request return</button>' : '') +
+				(o.courier && o.courier.provider === 'carrybee' ? '<button class="pg-btn pg-btn-sm" data-act="cb-exchange">Exchange</button>' : '') +
 			'</div>';
 		A.ajax('pg_orders_notes', { order_id: id }).then(function (d) { renderNotes(id, d.notes); })
 			.catch(function (e) { setNotesHtml(id, '<div class="pg-alert pg-alert-bad">' + esc(e.message) + '</div>'); });
@@ -343,11 +349,34 @@
 		}).catch(function (e) { m.body.innerHTML = '<div class="pg-alert pg-alert-bad">' + esc(e.message) + '</div>'; });
 	}
 
-	/* ---------- Steadfast ---------- */
+	/* ---------- Courier (Steadfast / Carrybee) ---------- */
+
+	var COURIERS = cfg.couriers && typeof cfg.couriers === 'object' && !Array.isArray(cfg.couriers) ? cfg.couriers : {};
+	function courierKeys() { return Object.keys(COURIERS); }
+	function courierWord() {
+		var k = courierKeys();
+		if (k.length === 1) { return k[0] === 'steadfast' ? 'SF' : COURIERS[k[0]]; }
+		return 'courier';
+	}
+	function courierPicker() {
+		var k = courierKeys();
+		if (k.length < 2) { return ''; }
+		var cur = cfg.courier && COURIERS[cfg.courier] ? cfg.courier : k[0];
+		return '<div class="pg-field"><label>Courier</label><div class="pg-courier-pick">' + k.map(function (c) {
+			return '<label class="pg-check pg-courier-opt"><input type="radio" name="pg-courier" value="' + esc(c) + '"' + (c === cur ? ' checked' : '') + '> ' + esc(COURIERS[c]) + '</label>';
+		}).join('') + '</div></div>';
+	}
+	function pickedCourier(box) {
+		var r = box.querySelector('input[name="pg-courier"]:checked');
+		return r ? r.value : (courierKeys()[0] || 'steadfast');
+	}
+	function noCourier() {
+		A.toast('Set up Steadfast or Carrybee in Settings first.', 'bad');
+	}
 
 	function sfSend(id) {
 		var o = state.orders[id];
-		if (!cfg.sfReady) { A.toast('Add Steadfast API keys in Settings first.', 'bad'); return; }
+		if (!courierKeys().length) { noCourier(); return; }
 		var warn = '';
 		if (o.dup && o.dup.type === 'duplicate') {
 			warn = '<div class="pg-alert pg-alert-warn">This number has other recent orders (#' + o.dup.dup_ids.join(', #') + '). Check for a duplicate before sending.</div>';
@@ -357,8 +386,8 @@
 			warn += '<div class="pg-alert ' + (lv === 'risky' ? 'pg-alert-bad' : (lv === 'new' ? 'pg-alert-info' : 'pg-alert-warn')) + '">' +
 				esc(o.fraud.verdict.title) + ' — ' + esc(o.fraud.verdict.advice) + '</div>';
 		}
-		var m = A.modal('Send #' + o.number + ' to Steadfast',
-			warn +
+		var m = A.modal('Send #' + o.number + ' to ' + (courierKeys().length === 1 ? COURIERS[courierKeys()[0]] : 'courier'),
+			warn + courierPicker() +
 			'<div class="pg-field"><label>Invoice</label><input type="text" value="' + esc(o.next_invoice) + '" readonly></div>' +
 			'<div class="pg-field"><label>Recipient</label><div>' + esc(o.name) + ' · <b>' + esc(o.phone_bd || o.phone) + '</b></div><div class="pg-muted">' + esc(o.address) + '</div></div>' +
 			'<div class="pg-field"><label>COD amount (৳)</label><input type="number" min="0" step="1" data-cod value="' + Math.round(o.cod) + '"></div>' +
@@ -368,7 +397,7 @@
 		m.body.querySelector('[data-go]').addEventListener('click', function () {
 			var btn = this;
 			A.busy(btn, true);
-			A.ajax('pg_sf_send', { order_id: id, cod_amount: m.body.querySelector('[data-cod]').value, note: m.body.querySelector('[data-note]').value })
+			A.ajax('pg_sf_send', { order_id: id, courier: pickedCourier(m.body), cod_amount: m.body.querySelector('[data-cod]').value, note: m.body.querySelector('[data-note]').value })
 				.then(function (d) { A.toast(d.message, 'ok'); m.close(); replaceCard(d.order); refreshKpis(); })
 				.catch(function (e) { A.toast(e.message, 'bad'); A.busy(btn, false); });
 		});
@@ -376,21 +405,72 @@
 
 	function sfVoid(id, btn) {
 		var o = state.orders[id];
-		var m = A.modal('Void consignment?',
-			'<p>Use this after the parcel <b>' + esc(o.courier.tracking) + '</b> was cancelled in the Steadfast portal.</p>' +
-			'<p class="pg-muted">The order goes back to Processing, and the next booking uses a new invoice suffix (-R1, -R2…) so Steadfast accepts it.</p>' +
-			'<div class="pg-form-actions"><button class="pg-btn" data-close>Keep</button><button class="pg-btn pg-btn-primary" data-go>Void consignment</button></div>',
+		var cb = o.courier.provider === 'carrybee';
+		var m = A.modal(cb ? 'Cancel Carrybee parcel?' : 'Void consignment?',
+			(cb
+				? '<p>Product Glide asks Carrybee to cancel parcel <b>' + esc(o.courier.cid) + '</b>, then frees the order so you can send it again.</p>' +
+					'<div class="pg-field"><label>Cancellation reason</label><input type="text" data-reason value="Cancelled by merchant"></div>'
+				: '<p>Use this after the parcel <b>' + esc(o.courier.tracking) + '</b> was cancelled in the Steadfast portal.</p>') +
+			'<p class="pg-muted">The order goes back to Processing, and the next booking uses a new invoice suffix (-R1, -R2…).</p>' +
+			'<div data-force-box></div>' +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>Keep</button><button class="pg-btn pg-btn-primary" data-go>' + (cb ? 'Cancel parcel' : 'Void consignment') + '</button></div>',
+			{ center: true });
+		var force = 0;
+		m.body.querySelector('[data-go]').addEventListener('click', function () {
+			var b = this, r = m.body.querySelector('[data-reason]');
+			A.busy(b, true);
+			A.ajax('pg_sf_void', { order_id: id, reason: r ? r.value : '', force: force }).then(function (d) { A.toast(d.message, 'ok'); m.close(); replaceCard(d.order); refreshKpis(); })
+				.catch(function (e) {
+					A.busy(b, false);
+					if (e.data && e.data.can_force) {
+						force = 1;
+						m.body.querySelector('[data-force-box]').innerHTML = '<div class="pg-alert pg-alert-warn">' + esc(e.message) +
+							'<br>If the parcel is already cancelled in the Carrybee panel, press the button again to free the order in Product Glide only.</div>';
+						b.textContent = 'Free the order anyway';
+						return;
+					}
+					A.toast(e.message, 'bad');
+				});
+		});
+	}
+
+	function cbExchange(id) {
+		var o = state.orders[id];
+		var m = A.modal('Exchange · ' + o.courier.cid,
+			'<p class="pg-muted">Carrybee delivers the replacement and collects the old item. The parcel must already be delivered.</p>' +
+			'<div class="pg-grid pg-grid-2"><div class="pg-field"><label>Collect from customer (৳)</label><input type="number" min="0" step="1" data-amt value="0"></div>' +
+			'<div class="pg-field"><label>Items</label><input type="number" min="1" step="1" data-qty value="1"></div></div>' +
+			'<div class="pg-field"><label>What is being exchanged</label><input type="text" data-desc placeholder="e.g. HSK 1 book → HSK 2 book"></div>' +
+			'<div class="pg-field"><label>Note for the rider</label><textarea data-note rows="2"></textarea></div>' +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-btn-primary" data-go>Create exchange</button></div>',
 			{ center: true });
 		m.body.querySelector('[data-go]').addEventListener('click', function () {
 			var b = this;
 			A.busy(b, true);
-			A.ajax('pg_sf_void', { order_id: id }).then(function (d) { A.toast(d.message, 'ok'); m.close(); replaceCard(d.order); refreshKpis(); })
+			A.ajax('pg_cb_exchange', { order_id: id, collectable_amount: m.body.querySelector('[data-amt]').value, item_quantity: m.body.querySelector('[data-qty]').value,
+				description: m.body.querySelector('[data-desc]').value, note: m.body.querySelector('[data-note]').value })
+				.then(function (d) { A.toast(d.message, 'ok'); m.close(); })
 				.catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
 		});
 	}
 
 	function sfReturn(id) {
 		var o = state.orders[id];
+		if (o.courier && o.courier.provider === 'carrybee') {
+			var mc = A.modal('Return pickup · ' + o.courier.cid,
+				'<p class="pg-muted">Carrybee picks the item up from the customer and brings it back to your store. The parcel must already be delivered.</p>' +
+				'<div class="pg-field"><label>Note for the rider</label><textarea data-reason rows="2"></textarea></div>' +
+				'<div class="pg-form-actions"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-btn-primary" data-go>Create return pickup</button></div>',
+				{ center: true });
+			mc.body.querySelector('[data-go]').addEventListener('click', function () {
+				var b = this;
+				A.busy(b, true);
+				A.ajax('pg_cb_return', { order_id: id, reason: mc.body.querySelector('[data-reason]').value })
+					.then(function (d) { A.toast(d.message, 'ok'); mc.close(); })
+					.catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
+			});
+			return;
+		}
 		var m = A.modal('Return request · ' + o.courier.tracking,
 			'<div class="pg-field"><label>Reason</label><textarea data-reason rows="2"></textarea></div>' +
 			'<div class="pg-form-actions"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-btn-primary" data-go>Create return request</button></div>',
@@ -411,15 +491,16 @@
 	function bulkSend() {
 		var ids = Array.from(state.selected);
 		if (!ids.length) { return; }
-		if (!cfg.sfReady) { A.toast('Add Steadfast API keys in Settings first.', 'bad'); return; }
-		var m = A.modal('Send ' + ids.length + ' orders to Steadfast',
+		if (!courierKeys().length) { noCourier(); return; }
+		var m = A.modal('Send ' + ids.length + ' orders to ' + (courierKeys().length === 1 ? COURIERS[courierKeys()[0]] : 'courier'),
+			courierPicker() +
 			'<p class="pg-muted">Each order is validated first. Orders already booked are skipped.</p>' +
 			'<div class="pg-form-actions"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-btn-primary" data-go>Book ' + ids.length + ' parcels</button></div><ul class="pg-bulk-res" data-res></ul>',
 			{ center: true });
 		m.body.querySelector('[data-go]').addEventListener('click', function () {
 			var b = this;
 			A.busy(b, true);
-			A.ajax('pg_sf_bulk', { order_ids: ids }).then(function (d) {
+			A.ajax('pg_sf_bulk', { order_ids: ids, courier: pickedCourier(m.body) }).then(function (d) {
 				var ok = 0;
 				m.body.querySelector('[data-res]').innerHTML = d.results.map(function (r) {
 					var o = state.orders[r.order_id];
@@ -526,6 +607,7 @@
 			case 'sf-send': sfSend(id); break;
 			case 'sf-void': sfVoid(id, el); break;
 			case 'sf-return': sfReturn(id); break;
+			case 'cb-exchange': cbExchange(id); break;
 			case 'sf-refresh':
 				A.busy(el, true);
 				A.ajax('pg_sf_refresh', { order_id: id }).then(function (d) { A.toast(d.message, 'ok'); replaceCard(d.order); refreshKpis(); })
@@ -593,7 +675,7 @@
 		});
 		var warn = '';
 		if (o.courier && o.courier.status !== 'cancelled') {
-			warn = '<div class="pg-alert pg-alert-warn">Already booked with Steadfast (COD ' + A.money(o.courier.cod) + '). If the total changes, update the COD in the Steadfast panel too.</div>';
+			warn = '<div class="pg-alert pg-alert-warn">Already booked with ' + esc(o.courier.label || 'Steadfast') + ' (COD ' + A.money(o.courier.cod) + '). If the total changes, update the COD in the ' + esc(o.courier.label || 'Steadfast') + ' panel too.</div>';
 		}
 		if (o.coupons && o.coupons.length) {
 			warn += '<div class="pg-alert pg-alert-warn">Coupon ' + esc(o.coupons.join(', ')) + ' will be replaced by the discount amount below.</div>';

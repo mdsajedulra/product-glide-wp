@@ -95,6 +95,9 @@ class PG_Admin {
 				'site'    => wp_parse_url( home_url(), PHP_URL_HOST ),
 			),
 			'sfReady'     => PG_Steadfast_API::configured(),
+			'cbReady'     => PG_Carrybee_API::ready(),
+			'couriers'    => PG_Courier::available(),
+			'courier'     => PG_Courier::default_courier(),
 			'waReady'     => PG_WhatsApp::configured(),
 			'fraudAuto'   => (bool) $s['fraud_auto'],
 			'pkgDelivery' => (float) $s['pkg_delivery_charge'],
@@ -191,7 +194,7 @@ class PG_Admin {
 		<div class="pg-toolbar">
 			<input type="search" id="pg-q" placeholder="<?php esc_attr_e( 'Search order #, phone or name…', 'product-glide' ); ?>" autocomplete="off">
 			<select id="pg-per-page"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option></select>
-			<button type="button" class="pg-btn" id="pg-sync" title="<?php esc_attr_e( 'Fetch the latest status of all parcels in transit from Steadfast', 'product-glide' ); ?>">&#8635; <?php esc_html_e( 'Sync courier', 'product-glide' ); ?></button>
+			<button type="button" class="pg-btn" id="pg-sync" title="<?php esc_attr_e( 'Fetch the latest status of all parcels in transit from the couriers', 'product-glide' ); ?>">&#8635; <?php esc_html_e( 'Sync courier', 'product-glide' ); ?></button>
 		</div>
 		<?php
 		$last = get_option( 'pg_sf_last_sync' );
@@ -210,7 +213,7 @@ class PG_Admin {
 		<div class="pg-bottom-bar" id="pg-bottom-bar" hidden>
 			<span id="pg-bottom-count"></span>
 			<button class="pg-btn pg-btn-ghost" data-bulk="clear"><?php esc_html_e( 'Clear', 'product-glide' ); ?></button>
-			<button class="pg-btn pg-btn-ghost" data-bulk="sf"><?php esc_html_e( 'Send to Steadfast', 'product-glide' ); ?></button>
+			<button class="pg-btn pg-btn-ghost" data-bulk="sf"><?php esc_html_e( 'Send to courier', 'product-glide' ); ?></button>
 			<button class="pg-btn pg-btn-primary" data-bulk="print"><?php esc_html_e( 'Print Selected Invoices', 'product-glide' ); ?></button>
 		</div>
 		<?php
