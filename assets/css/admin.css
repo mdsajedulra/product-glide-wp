@@ -640,3 +640,4 @@ body.pg-front .pg-toasts { top: 70px; }
 .pg-cb-store input { margin-top: 3px; }
 .pg-cb-newstore { margin-top: 10px; }
 .pg-cb-newstore > summary { cursor: pointer; font-weight: 600; color: var(--pg-primary-2); margin-bottom: 8px; }
+.pg-days { display: flex; flex-wrap: wrap; gap: 4px 14px; }

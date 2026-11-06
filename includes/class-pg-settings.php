@@ -41,6 +41,15 @@ class PG_Settings {
 			'sf_webhook_token'    => '',
 			'sf_default_note'     => '',
 			'sf_item_desc'        => 1,
+			'sf_pickup_auto'      => 0,
+			'sf_pickup_time'      => '15:00',
+			'sf_pickup_days'      => array( 0, 1, 2, 3, 4, 5, 6 ),
+			'sf_pickup_min'       => 1,
+			'sf_pickup_address_id' => 0,
+			'sf_pickup_ps_id'     => 0,
+			'sf_pickup_address'   => '',
+			'sf_pickup_phone'     => '',
+			'sf_pickup_note'      => '',
 			// Carrybee.
 			'cb_env'              => 'production',
 			'cb_client_id'        => '',
@@ -111,7 +120,7 @@ class PG_Settings {
 		$defs = self::defaults();
 		$in   = wp_unslash( $_POST ); // phpcs:ignore
 
-		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret' );
+		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret', 'sf_pickup_address', 'sf_pickup_phone', 'sf_pickup_note' );
 		foreach ( $text_keys as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = in_array( $k, array( 'logo_url', 'sf_base_url', 'inv_logo' ), true ) ? esc_url_raw( trim( $in[ $k ] ) ) : sanitize_text_field( $in[ $k ] );
@@ -158,9 +167,20 @@ class PG_Settings {
 				update_option( 'pg_flush_rewrite', 1, false );
 			}
 		}
+		foreach ( array( 'sf_pickup_min', 'sf_pickup_address_id', 'sf_pickup_ps_id' ) as $k ) {
+			if ( isset( $in[ $k ] ) ) {
+				$new[ $k ] = absint( $in[ $k ] );
+			}
+		}
+		if ( isset( $in['sf_pickup_time'] ) ) {
+			$new['sf_pickup_time'] = preg_match( '/^([01]?\d|2[0-3]):[0-5]\d$/', trim( $in['sf_pickup_time'] ) ) ? trim( $in['sf_pickup_time'] ) : '15:00';
+		}
 		$section = isset( $in['pg_section'] ) ? sanitize_key( $in['pg_section'] ) : '';
+		if ( 'steadfast' === $section ) {
+			$new['sf_pickup_days'] = isset( $in['sf_pickup_days'] ) ? array_values( array_intersect( array( 0, 1, 2, 3, 4, 5, 6 ), array_map( 'intval', (array) $in['sf_pickup_days'] ) ) ) : array();
+		}
 		$checkbox_by_section = array(
-			'steadfast' => array( 'sf_item_desc' ),
+			'steadfast' => array( 'sf_item_desc', 'sf_pickup_auto' ),
 			'fraud'     => array( 'fraud_auto' ),
 			'whatsapp'  => array( 'wa_auto' ),
 			'leads'     => array( 'lead_enabled', 'guard_bd_phone', 'block_repeat' ),
@@ -188,6 +208,9 @@ class PG_Settings {
 		}
 
 		update_option( 'pg_settings', wp_parse_args( $new, $defs ), false );
+		if ( 'steadfast' === $section || 'general' === $section ) {
+			PG_SF_Pickup::ensure_schedule( true );
+		}
 		if ( 'updates' === $section ) {
 			delete_site_transient( 'pg_update_release' );
 			delete_site_transient( 'pg_update_release_err' );
@@ -254,6 +277,7 @@ class PG_Settings {
 							<label class="pg-check"><input type="checkbox" name="regen_webhook_token" value="1"> <?php esc_html_e( 'Generate a new token on save', 'product-glide' ); ?></label>
 						</div>
 						<?php
+						self::render_pickup( $s );
 						break;
 					case 'carrybee':
 						$cb_ready = PG_Carrybee_API::configured();
@@ -439,6 +463,44 @@ class PG_Settings {
 			?>
 		</div>
 		<?php
+	}
+
+	private static function render_pickup( $s ) {
+		echo '<h3 class="pg-set-h">' . esc_html__( 'Daily rider pickup request', 'product-glide' ) . '</h3>';
+		echo '<p class="pg-muted">' . esc_html__( 'Sends one Steadfast pickup request a day at the time below (Bangladesh time). The parcel count is the Steadfast parcels booked since the last pickup.', 'product-glide' ) . '</p>';
+		self::field_check( 'sf_pickup_auto', __( 'Send the pickup request automatically', 'product-glide' ), $s );
+		printf( '<div class="pg-field"><label for="pg-sf_pickup_time">%s</label><input type="time" id="pg-sf_pickup_time" name="sf_pickup_time" value="%s"></div>', esc_html__( 'Time', 'product-glide' ), esc_attr( $s['sf_pickup_time'] ) );
+		$days = is_array( $s['sf_pickup_days'] ) ? array_map( 'intval', $s['sf_pickup_days'] ) : array();
+		$names = array( 6 => 'Sat', 0 => 'Sun', 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri' );
+		echo '<div class="pg-field"><label>' . esc_html__( 'Days', 'product-glide' ) . '</label><div class="pg-days">';
+		foreach ( $names as $n => $l ) {
+			printf( '<label class="pg-check"><input type="checkbox" name="sf_pickup_days[]" value="%d" %s> %s</label> ', (int) $n, checked( in_array( $n, $days, true ), true, false ), esc_html( $l ) );
+		}
+		echo '</div></div>';
+		self::field_number( 'sf_pickup_min', __( 'Only send if at least this many new parcels (0 = send every day)', 'product-glide' ), $s );
+		self::field_number( 'sf_pickup_address_id', __( 'Pickup address ID (from Steadfast panel, 0 = default)', 'product-glide' ), $s );
+		self::field_number( 'sf_pickup_ps_id', __( 'Police station ID (optional)', 'product-glide' ), $s );
+		self::field_text( 'sf_pickup_address', __( 'Pickup address', 'product-glide' ), $s );
+		self::field_auto( 'sf_pickup_phone', __( 'Contact number', 'product-glide' ), $s, (string) $s['hotline'] );
+		self::field_text( 'sf_pickup_note', __( 'Note for the rider', 'product-glide' ), $s );
+		$next = wp_next_scheduled( PG_SF_Pickup::HOOK );
+		echo '<div class="pg-field"><p>';
+		if ( PG_SF_Pickup::enabled() && $next ) {
+			echo '<b>' . esc_html__( 'Next run:', 'product-glide' ) . '</b> ' . esc_html( PG_Helpers::bd_time( $next ) ) . ' &middot; ';
+		} else {
+			echo esc_html__( 'Auto pickup is off.', 'product-glide' ) . ' &middot; ';
+		}
+		echo esc_html( sprintf( /* translators: n */ __( 'New Steadfast parcels since the last pickup: %d', 'product-glide' ), PG_SF_Pickup::parcel_count() ) ) . '</p>';
+		echo '<button type="button" class="pg-btn" id="pg-sf-pickup-now">' . esc_html__( 'Send pickup request now', 'product-glide' ) . '</button> <span class="pg-muted">' . esc_html__( 'Uses the saved details above. Save first if you changed them.', 'product-glide' ) . '</span><div id="pg-sf-pickup-out"></div></div>';
+		$log = PG_SF_Pickup::log();
+		if ( $log ) {
+			echo '<div class="pg-field"><label>' . esc_html__( 'Recent pickup runs', 'product-glide' ) . '</label><table class="pg-table"><tbody>';
+			foreach ( $log as $r ) {
+				$cls = 'sent' === $r['status'] ? 'pg-badge-ok' : ( 'failed' === $r['status'] ? 'pg-badge-bad' : 'pg-badge-info' );
+				printf( '<tr><td>%s</td><td><span class="pg-badge %s">%s</span></td><td>%s</td></tr>', esc_html( PG_Helpers::bd_time( $r['time'] ) ), esc_attr( $cls ), esc_html( ucfirst( $r['status'] ) ), esc_html( $r['message'] ) );
+			}
+			echo '</tbody></table></div>';
+		}
 	}
 
 	private static function field_text( $k, $label, $s ) {

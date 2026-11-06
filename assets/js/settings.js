@@ -3,6 +3,19 @@
 	'use strict';
 	var A = window.PGA, esc = A.esc;
 
+	/* ---------- Steadfast daily pickup ---------- */
+	var pkNow = document.getElementById('pg-sf-pickup-now');
+	if (pkNow) {
+		pkNow.addEventListener('click', function () {
+			var out = document.getElementById('pg-sf-pickup-out');
+			A.busy(pkNow, true);
+			out.innerHTML = '';
+			A.ajax('pg_sf_pickup_now', {}).then(function (d) { out.innerHTML = '<div class="pg-alert pg-alert-ok">' + esc(d.message) + '</div>'; })
+				.catch(function (e) { out.innerHTML = '<div class="pg-alert pg-alert-bad">' + esc(e.message) + '</div>'; })
+				.finally(function () { A.busy(pkNow, false); });
+		});
+	}
+
 	/* ---------- Carrybee ---------- */
 	var cbTest = document.getElementById('pg-cb-test');
 	if (cbTest) {
