@@ -22,6 +22,7 @@ class PG_Statuses {
 			'wc-courier_pending'   => array( __( 'Courier Pending', 'product-glide' ), '#d97706', '' ),
 			'wc-partial_delivered' => array( __( 'Partial Delivered', 'product-glide' ), '#7c3aed', '' ),
 			'wc-payment_pending'   => array( __( 'Payment Pending', 'product-glide' ), '#db2777', '' ),
+			'wc-rescheduled'       => array( __( 'Rescheduled', 'product-glide' ), '#0d9488', '' ),
 		);
 		foreach ( (array) get_option( 'pg_custom_statuses', array() ) as $slug => $row ) {
 			$slug = 'wc-' . preg_replace( '/^wc-/', '', sanitize_key( $slug ) );

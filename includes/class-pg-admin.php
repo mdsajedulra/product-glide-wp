@@ -18,7 +18,8 @@ class PG_Admin {
 	public static function menu() {
 		$cap = PG_App::CAP;
 		add_menu_page( 'Product Glide', 'Product Glide', $cap, 'product-glide', array( __CLASS__, 'page_orders' ), 'dashicons-airplane', 56 );
-		add_submenu_page( 'product-glide', __( 'Orders', 'product-glide' ), __( 'Orders', 'product-glide' ), $cap, 'product-glide', array( __CLASS__, 'page_orders' ) );
+		$due = PG_Reschedule::due_count();
+		add_submenu_page( 'product-glide', __( 'Orders', 'product-glide' ), __( 'Orders', 'product-glide' ) . ( $due ? ' <span class="awaiting-mod" title="' . esc_attr__( 'Rescheduled orders due', 'product-glide' ) . '">' . $due . '</span>' : '' ), $cap, 'product-glide', array( __CLASS__, 'page_orders' ) );
 		$n = PG_Leads::enabled() ? (int) PG_Leads::badge_count() : 0;
 		add_submenu_page( 'product-glide', __( 'Incomplete Orders', 'product-glide' ), __( 'Incomplete Orders', 'product-glide' ) . ( $n ? ' <span class="awaiting-mod">' . $n . '</span>' : '' ), $cap, 'pg-leads', array( __CLASS__, 'page_leads' ) );
 		add_submenu_page( 'product-glide', __( 'Package Builder', 'product-glide' ), __( 'Package Builder', 'product-glide' ), $cap, 'pg-packages', array( __CLASS__, 'page_packages' ) );
@@ -111,6 +112,7 @@ class PG_Admin {
 			'front'       => $front,
 			'ordersUrl'   => $front ? PG_App::url() : admin_url( 'admin.php?page=product-glide' ),
 			'newOrderUrl' => $front ? PG_App::url( 'new' ) : admin_url( 'admin.php?page=pg-ocr' ),
+			'rsReasons'   => PG_Reschedule::reasons(),
 		);
 	}
 
@@ -173,6 +175,9 @@ class PG_Admin {
 				$handles = array( 'pg-app', 'pg-settings' );
 				break;
 		}
+		// Follow-up reminders for rescheduled orders, on every dashboard screen.
+		wp_enqueue_script( 'pg-reminder', PG_URL . 'assets/js/reminder.js', array( 'pg-app' ), $v, true );
+		$handles[] = 'pg-reminder';
 		return $handles;
 	}
 

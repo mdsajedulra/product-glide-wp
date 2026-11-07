@@ -10,6 +10,7 @@ class PG_Orders {
 		return array(
 			'all'               => __( 'All', 'product-glide' ),
 			'processing'        => __( 'Processing', 'product-glide' ),
+			'rescheduled'       => __( 'Rescheduled', 'product-glide' ),
 			'courier_sent'      => __( 'Courier Sent', 'product-glide' ),
 			'courier_pending'   => __( 'Courier Pending', 'product-glide' ),
 			'completed'         => __( 'Delivered', 'product-glide' ),
@@ -116,6 +117,7 @@ class PG_Orders {
 				'sent_at'  => PG_Helpers::bd_time( $c->created_at ),
 			) : null,
 			'next_invoice'  => PG_Steadfast::invoice_for( $order ),
+			'resched'       => PG_Reschedule::card( $order ),
 			'dup'           => null,
 		);
 		if ( null === $dup_rows ) {
@@ -249,6 +251,11 @@ class PG_Orders {
 			);
 			$total  = count( $found );
 			$orders = array_slice( $found, ( $page - 1 ) * $per_page, $per_page );
+		} elseif ( PG_Reschedule::STATUS === $status ) {
+			// Soonest follow-up first.
+			$all    = PG_Reschedule::ids();
+			$total  = count( $all );
+			$orders = array_filter( array_map( 'wc_get_order', array_slice( $all, ( $page - 1 ) * $per_page, $per_page ) ) );
 		} else {
 			$res    = wc_get_orders(
 				array(

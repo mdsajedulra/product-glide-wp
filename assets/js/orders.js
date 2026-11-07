@@ -22,6 +22,8 @@
 	$per.value = String(state.per);
 	var urlQ = new URLSearchParams(window.location.search).get('q');
 	if (urlQ) { state.q = urlQ; state.status = 'all'; $q.value = urlQ; }
+	var urlTab = new URLSearchParams(window.location.search).get('tab');
+	if (urlTab && cfg.tabs[urlTab]) { state.status = urlTab; }
 
 	function persist() {
 		try { localStorage.setItem('pg_orders_state', JSON.stringify({ status: state.status, per: state.per })); } catch (e) {}
@@ -149,6 +151,52 @@
 			(c.message ? '<span class="pg-muted">' + esc(c.message) + '</span>' : '') + '</div>';
 	}
 
+	/* ---------- Reschedule ---------- */
+
+	var NO_RESCHED = ['completed', 'cancelled', 'refunded', 'failed', 'partial_delivered'];
+	function canReschedule(o) {
+		return NO_RESCHED.indexOf(o.status) === -1 && !(o.courier && ['cancelled', 'voided'].indexOf(o.courier.status) === -1);
+	}
+	function reschedHtml(o) {
+		var r = o.resched;
+		if (!r) { return ''; }
+		var cls = r.due ? (/overdue/.test(r.relative) ? ' is-overdue' : ' is-due') : '';
+		return '<div class="pg-rs-banner' + cls + '">' +
+			'<div class="pg-rs-when"><span class="pg-rs-ico" aria-hidden="true">&#128197;</span><div><b>' + (r.ts ? 'Follow up ' + esc(r.relative) : 'Follow-up date not set') + '</b>' +
+				(r.label ? '<span>' + esc(r.label) + (r.count > 1 ? ' · rescheduled ' + r.count + '×' : '') + '</span>' : '') +
+				(r.note ? '<em>' + esc(r.note) + '</em>' : '') + '</div></div>' +
+			'<div class="pg-rs-acts"><button class="pg-btn pg-btn-sm" data-act="rs-set">Change date</button>' +
+				'<button class="pg-btn pg-btn-sm pg-btn-primary" data-act="rs-done" title="Back to Processing, ready to ship">Ready to ship</button></div>' +
+		'</div>';
+	}
+	function rsSet(id, sel, prev) {
+		var o = state.orders[id];
+		A.reschedule(o, function (d) { applyCard(d.order); }, function () { if (sel) { sel.value = prev; sel.disabled = false; } });
+	}
+	function rsDone(id, btn) {
+		A.busy(btn, true);
+		A.ajax('pg_rs_done', { order_id: id, status: 'processing' }).then(function (d) { A.toast(d.message, 'ok'); applyCard(d.order); document.dispatchEvent(new CustomEvent('pg:rs-changed')); })
+			.catch(function (e) { A.toast(e.message, 'bad'); A.busy(btn, false); });
+	}
+	/* A card left its tab (e.g. rescheduled from Processing): drop it from this view. */
+	function applyCard(o) {
+		if (state.status !== 'all' && o.status !== state.status && !state.q) {
+			var el = $list.querySelector('.pg-order[data-id="' + o.id + '"]');
+			state.orders[o.id] = o;
+			if (el) { el.classList.add('pg-leaving'); setTimeout(function () { load(true); }, 500); }
+			return;
+		}
+		replaceCard(o);
+	}
+	document.addEventListener('pg:rescheduled', function (e) {
+		var o = e.detail && e.detail.order;
+		if (o && state.orders[o.id]) { applyCard(o); }
+	});
+	document.addEventListener('pg:rs-order', function (e) {
+		var o = e.detail;
+		if (o && state.orders[o.id]) { applyCard(o); }
+	});
+
 	function cardHtml(o) {
 		var sel = state.selected.has(o.id);
 		var dup = '';
@@ -193,11 +241,13 @@
 					'</div>' +
 					'<ul class="pg-items">' + items + (o.discount ? '<li><span class="pg-muted">Discount</span><span>-' + A.money(o.discount) + '</span></li>' : '') + (o.shipping ? '<li><span class="pg-muted">Delivery</span><span>' + A.money(o.shipping) + '</span></li>' : '') + '</ul>' +
 					(o.customer_note ? '<div class="pg-custnote"><b>Customer note</b>' + esc(o.customer_note) + '</div>' : '') +
+					reschedHtml(o) +
 					courierHtml(o) +
 					'<div class="pg-fraud" data-fraud>' + fraudHtml(o.fraud, o) + '</div>' +
 				'</div>' +
 			'</div>' +
 			'<div class="pg-order-actions">' + sfBtn +
+				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="Customer wants it later? Set a follow-up date">&#128197; Reschedule</button>' : '') +
 				'<button class="pg-btn" data-act="edit">Edit</button>' +
 				'<button class="pg-btn" data-act="more" aria-expanded="false">Notes ▾</button>' +
 				'<button class="pg-btn" data-act="jpg">Invoice JPG</button>' +
@@ -593,8 +643,9 @@
 		if (act === 'status') {
 			var sel = e.target, val = sel.value, prev = state.orders[id].status;
 			sel.disabled = true;
+			if (val === 'rescheduled') { rsSet(id, sel, prev); return; }
 			A.ajax('pg_orders_set_status', { order_id: id, status: val })
-				.then(function (d) { A.toast('Status → ' + cfg.statuses[val], 'ok'); replaceCard(d.order); })
+				.then(function (d) { A.toast('Status → ' + cfg.statuses[val], 'ok'); if (prev === 'rescheduled') { document.dispatchEvent(new CustomEvent('pg:rs-changed')); } replaceCard(d.order); })
 				.catch(function (err) { A.toast(err.message, 'bad'); sel.value = prev; sel.disabled = false; });
 		}
 	});
@@ -610,6 +661,8 @@
 		switch (act) {
 			case 'more': openMore(id); break;
 			case 'edit': editOrder(id); break;
+			case 'rs-set': rsSet(id); break;
+			case 'rs-done': rsDone(id, el); break;
 			case 'history': history(id); break;
 			case 'sf-send': sfSend(id); break;
 			case 'sf-void': sfVoid(id, el); break;

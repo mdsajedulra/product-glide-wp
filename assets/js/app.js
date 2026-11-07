@@ -263,6 +263,57 @@
 		box.querySelector('.pg-risk-more').textContent = det.hidden ? 'বিস্তারিত ▾' : 'বন্ধ করুন ▴';
 	}
 
+	/* ---------- Reschedule dialog (orders list + reminder popup) ---------- */
+
+	function ymd(d) {
+		return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+	}
+
+	/**
+	 * o: { id, number, name, resched?: { date, time, note } }. onDone(data) gets the
+	 * ajax answer ({ message, order }).
+	 */
+	function reschedule(o, onDone, onCancel) {
+		var cur = o.resched || {};
+		var plus = function (n) { var d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+		var quick = [[1, 'Tomorrow'], [2, 'In 2 days'], [3, 'In 3 days'], [7, 'In 1 week']];
+		var reasons = (cfg.rsReasons || []).map(function (r) {
+			return '<button type="button" class="pg-chip" data-reason="' + esc(r) + '">' + esc(r) + '</button>';
+		}).join('');
+		var done = false;
+		var m = modal('Reschedule order #' + o.number,
+			'<p class="pg-muted">' + esc(o.name || '') + ' · The order moves to <b>Rescheduled</b>. On the chosen date you get a reminder popup to call the customer.</p>' +
+			'<div class="pg-field"><label>When should we follow up?</label><div class="pg-chips pg-rs-quick">' +
+				quick.map(function (q) { return '<button type="button" class="pg-chip" data-days="' + q[0] + '">' + q[1] + '</button>'; }).join('') +
+			'</div></div>' +
+			'<div class="pg-grid pg-grid-2"><div class="pg-field"><label>Date</label><input type="date" data-rs-date min="' + ymd(new Date()) + '" value="' + esc(cur.date || plus(2)) + '"></div>' +
+			'<div class="pg-field"><label>Reminder time</label><input type="time" data-rs-time value="' + esc(cur.time || '10:00') + '"></div></div>' +
+			'<div class="pg-field"><label>Reason / note</label><input type="text" data-rs-note maxlength="200" value="' + esc(cur.note || '') + '" placeholder="e.g. Customer is in Chattogram until Monday">' +
+			'<div class="pg-chips" style="margin-top:6px">' + reasons + '</div></div>' +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-btn-primary" data-go>Save reschedule</button></div>',
+			{ center: true, onClose: function () { if (!done && onCancel) { onCancel(); } } });
+		var date = m.body.querySelector('[data-rs-date]'), time = m.body.querySelector('[data-rs-time]'), note = m.body.querySelector('[data-rs-note]');
+		function markQuick() {
+			m.body.querySelectorAll('[data-days]').forEach(function (b) { b.classList.toggle('is-on', plus(+b.getAttribute('data-days')) === date.value); });
+		}
+		markQuick();
+		date.addEventListener('change', markQuick);
+		m.body.addEventListener('click', function (e) {
+			var q = e.target.closest('[data-days]');
+			if (q) { date.value = plus(+q.getAttribute('data-days')); markQuick(); return; }
+			var r = e.target.closest('[data-reason]');
+			if (r) { note.value = r.getAttribute('data-reason'); return; }
+			var go = e.target.closest('[data-go]');
+			if (!go) { return; }
+			if (!date.value) { toast('Pick a date', 'bad'); return; }
+			busy(go, true);
+			ajax('pg_rs_set', { order_id: o.id, date: date.value, time: time.value, note: note.value })
+				.then(function (d) { done = true; toast(d.message, 'ok'); m.close(); if (onDone) { onDone(d); } document.dispatchEvent(new CustomEvent('pg:rescheduled', { detail: d })); })
+				.catch(function (err) { toast(err.message, 'bad'); busy(go, false); });
+		});
+		return m;
+	}
+
 	// Copy buttons anywhere: <button data-copy="...">
 	document.addEventListener('click', function (e) {
 		var b = e.target.closest('[data-copy]');
@@ -273,6 +324,6 @@
 		cfg: cfg, ajax: ajax, esc: esc, money: money, toast: toast, modal: modal, copy: copy, busy: busy,
 		debounce: debounce, printUrl: printUrl, today: today, loadImage: loadImage, fontsReady: fontsReady,
 		roundRect: roundRect, wrapText: wrapText, downloadCanvas: downloadCanvas, shareCanvas: shareCanvas,
-		fraudHtml: fraudHtml, riskToggle: riskToggle
+		fraudHtml: fraudHtml, riskToggle: riskToggle, reschedule: reschedule
 	};
 })();
