@@ -363,7 +363,8 @@ class PG_Orders {
 			return false;
 		}
 		$t = trim( wp_strip_all_tags( (string) $content ) );
-		return ! preg_match( '/Order status changed from|^Status changed from Product Glide|^Rescheduled to |^Follow-up done after reschedule/i', $t );
+		// Leave out automatic notes (status changes, courier bookings, edits, stock).
+		return ! preg_match( '/Order status changed from|^Status changed from Product Glide|^Rescheduled to |^Follow-up done after reschedule|^(Steadfast|Carrybee) booked|^Carrybee .{0,40}(created|cancelled)|voided in Product Glide|^Order edited in Product Glide|^Created from Product Glide|^Adjusted stock|^(Added|Deleted|Removed) line items?|^Steadfast return request|^WhatsApp (template|send)/i', $t );
 	}
 
 	/** Latest staff notes for many orders in one query: id => array( total, notes[] ). */
