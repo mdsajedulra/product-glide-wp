@@ -55,7 +55,18 @@ class PG_Reschedule {
 		$day->setTime( 0, 0, 0 );
 		$diff = (int) round( ( $day->getTimestamp() - $today->getTimestamp() ) / DAY_IN_SECONDS );
 		if ( 0 === $diff ) {
-			return __( 'today', 'product-glide' );
+			$min = (int) round( ( $ts - time() ) / MINUTE_IN_SECONDS );
+			if ( $min > 0 ) {
+				$h = intdiv( $min, 60 );
+				$m = $min % 60;
+				/* translators: duration */
+				return sprintf( __( 'in %s', 'product-glide' ), ( $h ? $h . ' h' : '' ) . ( $h && $m ? ' ' : '' ) . ( $m ? $m . ' min' : '' ) );
+			}
+			if ( $min > -60 ) {
+				return __( 'due now', 'product-glide' );
+			}
+			/* translators: hours */
+			return sprintf( __( 'due %d h ago', 'product-glide' ), intdiv( -$min, 60 ) );
 		}
 		if ( 1 === $diff ) {
 			return __( 'tomorrow', 'product-glide' );

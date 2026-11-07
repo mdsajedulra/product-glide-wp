@@ -265,49 +265,124 @@
 
 	/* ---------- Reschedule dialog (orders list + reminder popup) ---------- */
 
-	function ymd(d) {
-		return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+	function pad2(n) { return ('0' + n).slice(-2); }
+	function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+	function hm(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+	function clock(d) {
+		var h = d.getHours(), ap = h >= 12 ? 'PM' : 'AM';
+		return ((h % 12) || 12) + ':' + pad2(d.getMinutes()) + ' ' + ap;
+	}
+	var WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	function dayName(d) {
+		var t = new Date(); t.setHours(0, 0, 0, 0);
+		var x = new Date(d); x.setHours(0, 0, 0, 0);
+		var diff = Math.round((x - t) / 864e5);
+		if (diff === 0) { return 'Today'; }
+		if (diff === 1) { return 'Tomorrow'; }
+		return WD[d.getDay()] + ', ' + d.getDate() + ' ' + MO[d.getMonth()];
+	}
+	function inWords(ms) {
+		var m = Math.round(ms / 6e4);
+		if (m < 1) { return 'now'; }
+		if (m < 60) { return 'in ' + m + ' min'; }
+		var h = Math.floor(m / 60), r = m % 60;
+		if (h < 24) { return 'in ' + h + ' h' + (r ? ' ' + r + ' min' : ''); }
+		var dd = Math.round(m / 1440);
+		return 'in ' + dd + ' day' + (dd > 1 ? 's' : '');
 	}
 
 	/**
-	 * o: { id, number, name, resched?: { date, time, note } }. onDone(data) gets the
-	 * ajax answer ({ message, order }).
+	 * o: { id, number, name, phone?, phone_bd?, total?, resched?: { date, time, note } }.
+	 * onDone(data) gets the ajax answer ({ message, order }).
 	 */
 	function reschedule(o, onDone, onCancel) {
 		var cur = o.resched || {};
-		var plus = function (n) { var d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
-		var quick = [[1, 'Tomorrow'], [2, 'In 2 days'], [3, 'In 3 days'], [7, 'In 1 week']];
+		var now = new Date();
+		var soon = [[30, '30 min'], [60, '1 hour'], [90, '1½ hours'], [120, '2 hours'], [180, '3 hours']];
+		if (now.getHours() < 18) { soon.push(['19:00', 'This evening']); }
+		var days = [[1, 'Tomorrow'], [2, 'In 2 days'], [3, 'In 3 days'], [7, 'In 1 week']];
+		var phone = o.phone_bd || o.phone || '';
+		var initial = String(o.name || '#').trim().charAt(0).toUpperCase() || '#';
+		var soonHtml = soon.map(function (q) {
+			var t;
+			if (typeof q[0] === 'string') { t = new Date(); t.setHours(19, 0, 0, 0); } else { t = new Date(Date.now() + q[0] * 6e4); }
+			return '<button type="button" class="pg-rsd-opt" data-soon="' + q[0] + '"><b>' + q[1] + '</b><span>' + (ymd(t) === ymd(now) ? '' : 'Tomorrow ') + clock(t) + '</span></button>';
+		}).join('');
+		var daysHtml = days.map(function (q) {
+			var t = new Date(); t.setDate(t.getDate() + q[0]);
+			return '<button type="button" class="pg-rsd-opt" data-days="' + q[0] + '"><b>' + q[1] + '</b><span>' + WD[t.getDay()] + ', ' + t.getDate() + ' ' + MO[t.getMonth()] + '</span></button>';
+		}).join('');
 		var reasons = (cfg.rsReasons || []).map(function (r) {
 			return '<button type="button" class="pg-chip" data-reason="' + esc(r) + '">' + esc(r) + '</button>';
 		}).join('');
 		var done = false;
-		var m = modal('Reschedule order #' + o.number,
-			'<p class="pg-muted">' + esc(o.name || '') + ' · The order moves to <b>Rescheduled</b>. On the chosen date you get a reminder popup to call the customer.</p>' +
-			'<div class="pg-field"><label>When should we follow up?</label><div class="pg-chips pg-rs-quick">' +
-				quick.map(function (q) { return '<button type="button" class="pg-chip" data-days="' + q[0] + '">' + q[1] + '</button>'; }).join('') +
-			'</div></div>' +
-			'<div class="pg-grid pg-grid-2"><div class="pg-field"><label>Date</label><input type="date" data-rs-date min="' + ymd(new Date()) + '" value="' + esc(cur.date || plus(2)) + '"></div>' +
-			'<div class="pg-field"><label>Reminder time</label><input type="time" data-rs-time value="' + esc(cur.time || '10:00') + '"></div></div>' +
-			'<div class="pg-field"><label>Reason / note</label><input type="text" data-rs-note maxlength="200" value="' + esc(cur.note || '') + '" placeholder="e.g. Customer is in Chattogram until Monday">' +
-			'<div class="pg-chips" style="margin-top:6px">' + reasons + '</div></div>' +
-			'<div class="pg-form-actions"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-btn-primary" data-go>Save reschedule</button></div>',
+		var m = modal('Reschedule order',
+			'<div class="pg-rsd">' +
+				'<div class="pg-rsd-cust"><span class="pg-rsd-av">' + esc(initial) + '</span><div class="pg-rsd-who"><b>' + esc(o.name || 'Customer') + '</b>' +
+					'<span>#' + esc(o.number) + (phone ? ' · ' + esc(phone) : '') + (o.total ? ' · ' + money(o.total) : '') + '</span></div>' +
+					'<span class="pg-rsd-tag">Moves to Rescheduled</span></div>' +
+				'<div class="pg-rsd-sec"><div class="pg-rsd-h"><span>&#9201;</span> Later today</div><div class="pg-rsd-grid">' + soonHtml + '</div></div>' +
+				'<div class="pg-rsd-sec"><div class="pg-rsd-h"><span>&#128197;</span> Another day</div><div class="pg-rsd-grid">' + daysHtml + '</div></div>' +
+				'<div class="pg-rsd-exact"><div class="pg-rsd-h"><span>&#9998;</span> Or set exact date &amp; time</div>' +
+					'<div class="pg-rsd-inputs"><input type="date" data-rs-date min="' + ymd(now) + '" aria-label="Date"><input type="time" data-rs-time aria-label="Time"></div></div>' +
+				'<div class="pg-rsd-sum" data-rs-sum></div>' +
+				'<div class="pg-rsd-sec"><div class="pg-rsd-h"><span>&#128172;</span> Why? <em>(optional)</em></div>' +
+					'<input type="text" class="pg-rsd-note" data-rs-note maxlength="200" value="' + esc(cur.note || '') + '" placeholder="e.g. Customer is in Chattogram until Monday">' +
+					'<div class="pg-chips pg-rsd-reasons">' + reasons + '</div></div>' +
+				'<div class="pg-rsd-foot"><button class="pg-btn" data-close>Cancel</button><button class="pg-btn pg-rsd-save" data-go>&#128276; Save &amp; remind me</button></div>' +
+			'</div>',
 			{ center: true, onClose: function () { if (!done && onCancel) { onCancel(); } } });
+		m.el.classList.add('pg-rsd-modal');
 		var date = m.body.querySelector('[data-rs-date]'), time = m.body.querySelector('[data-rs-time]'), note = m.body.querySelector('[data-rs-note]');
-		function markQuick() {
-			m.body.querySelectorAll('[data-days]').forEach(function (b) { b.classList.toggle('is-on', plus(+b.getAttribute('data-days')) === date.value); });
+		var sum = m.body.querySelector('[data-rs-sum]'), opts = m.body.querySelectorAll('.pg-rsd-opt');
+		function setAt(d) { date.value = ymd(d); time.value = hm(d); }
+		function picked() {
+			if (!date.value) { return null; }
+			var p = date.value.split('-'), t = (time.value || '10:00').split(':');
+			return new Date(+p[0], +p[1] - 1, +p[2], +t[0], +t[1]);
 		}
-		markQuick();
-		date.addEventListener('change', markQuick);
+		function paint() {
+			var d = picked(), ms = d ? d - Date.now() : 0;
+			sum.classList.toggle('is-bad', !!d && ms < -60000);
+			sum.innerHTML = !d ? '<span>&#128276;</span> Pick when to follow up' : (ms < -60000
+				? '<span>&#9888;</span> That time has already passed'
+				: '<span>&#128276;</span> Reminder <b>' + esc(dayName(d)) + ' · ' + esc(clock(d)) + '</b><em>' + esc(inWords(ms)) + '</em>');
+		}
+		function mark(btn) { opts.forEach(function (b) { b.classList.toggle('is-on', b === btn); }); }
+		if (cur.date) { date.value = cur.date; time.value = cur.time || '10:00'; } else {
+			var d0 = new Date(); d0.setDate(d0.getDate() + 2); d0.setHours(10, 0, 0, 0); setAt(d0);
+			mark(m.body.querySelector('[data-days="2"]'));
+		}
+		paint();
+		var manualTime = !!cur.date;
+		[date, time].forEach(function (el) { el.addEventListener('input', function () { if (el === time) { manualTime = true; } mark(null); paint(); }); });
 		m.body.addEventListener('click', function (e) {
+			var s = e.target.closest('[data-soon]');
+			if (s) {
+				var v = s.getAttribute('data-soon'), d;
+				if (v.indexOf(':') > -1) { d = new Date(); d.setHours(+v.split(':')[0], +v.split(':')[1], 0, 0); } else { d = new Date(Date.now() + v * 6e4); }
+				setAt(d); mark(s); paint(); return;
+			}
 			var q = e.target.closest('[data-days]');
-			if (q) { date.value = plus(+q.getAttribute('data-days')); markQuick(); return; }
+			if (q) {
+				var dd = new Date(); dd.setDate(dd.getDate() + (+q.getAttribute('data-days')));
+				var keep = manualTime && time.value ? time.value.split(':') : ['10', '00'];
+				dd.setHours(+keep[0], +keep[1], 0, 0);
+				setAt(dd); mark(q); paint(); return;
+			}
 			var r = e.target.closest('[data-reason]');
-			if (r) { note.value = r.getAttribute('data-reason'); return; }
+			if (r) {
+				note.value = r.getAttribute('data-reason');
+				m.body.querySelectorAll('[data-reason]').forEach(function (x) { x.classList.toggle('is-on', x === r); });
+				return;
+			}
 			var go = e.target.closest('[data-go]');
 			if (!go) { return; }
-			if (!date.value) { toast('Pick a date', 'bad'); return; }
+			var d2 = picked();
+			if (!d2) { toast('Pick a date', 'bad'); return; }
+			if (d2 - Date.now() < -60000) { toast('That time has already passed', 'bad'); return; }
 			busy(go, true);
-			ajax('pg_rs_set', { order_id: o.id, date: date.value, time: time.value, note: note.value })
+			ajax('pg_rs_set', { order_id: o.id, date: date.value, time: time.value || '10:00', note: note.value })
 				.then(function (d) { done = true; toast(d.message, 'ok'); m.close(); if (onDone) { onDone(d); } document.dispatchEvent(new CustomEvent('pg:rescheduled', { detail: d })); })
 				.catch(function (err) { toast(err.message, 'bad'); busy(go, false); });
 		});

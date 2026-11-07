@@ -197,6 +197,29 @@
 		if (o && state.orders[o.id]) { applyCard(o); }
 	});
 
+	/* ---------- Staff notes on the card ---------- */
+
+	function staffNotesHtml(o) {
+		var sn = o.staff_notes;
+		if (!sn || !sn.total) { return '<div class="pg-snotes" data-snotes hidden></div>'; }
+		return '<div class="pg-snotes" data-snotes>' + sn.notes.map(function (n, i) {
+			return '<div class="pg-snote' + (i === 0 ? ' is-latest' : '') + (n.customer ? ' is-cust' : '') + '">' +
+				'<div class="pg-snote-text">' + esc(n.content) + '</div>' +
+				'<div class="pg-snote-meta">' + esc(n.by) + ' · ' + esc(n.date) + (n.customer ? ' · <span>sent to customer</span>' : '') + '</div></div>';
+		}).join('') +
+		(sn.total > sn.notes.length ? '<button type="button" class="pg-snote-more" data-act="more">+' + (sn.total - sn.notes.length) + ' more note' + (sn.total - sn.notes.length > 1 ? 's' : '') + '</button>' : '') +
+		'</div>';
+	}
+	/* After notes change in the panel, refresh the notes shown on the card. */
+	function syncStaffNotes(id, notes) {
+		var o = state.orders[id];
+		if (!o) { return; }
+		var staff = notes.filter(function (n) { return n.staff; });
+		o.staff_notes = { total: staff.length, notes: staff.slice(0, 3).map(function (n) { return { content: n.content, by: n.by, date: n.short || n.date, customer: n.type === 'customer' }; }) };
+		var card = $list.querySelector('.pg-order[data-id="' + id + '"]'), box = card && card.querySelector('[data-snotes]');
+		if (box) { var t = document.createElement('div'); t.innerHTML = staffNotesHtml(o); box.replaceWith(t.firstChild); }
+	}
+
 	function cardHtml(o) {
 		var sel = state.selected.has(o.id);
 		var dup = '';
@@ -241,6 +264,7 @@
 					'</div>' +
 					'<ul class="pg-items">' + items + (o.discount ? '<li><span class="pg-muted">Discount</span><span>-' + A.money(o.discount) + '</span></li>' : '') + (o.shipping ? '<li><span class="pg-muted">Delivery</span><span>' + A.money(o.shipping) + '</span></li>' : '') + '</ul>' +
 					(o.customer_note ? '<div class="pg-custnote"><b>Customer note</b>' + esc(o.customer_note) + '</div>' : '') +
+					staffNotesHtml(o) +
 					reschedHtml(o) +
 					courierHtml(o) +
 					'<div class="pg-fraud" data-fraud>' + fraudHtml(o.fraud, o) + '</div>' +
@@ -306,6 +330,7 @@
 	}
 
 	function renderNotes(id, notes) {
+		syncStaffNotes(id, notes);
 		if (!notes.length) { setNotesHtml(id, '<div class="pg-muted">No notes yet.</div>'); return; }
 		setNotesHtml(id, notes.map(function (n) {
 			return '<div class="pg-note pg-note-' + n.type + '" data-note-id="' + n.id + '"><div class="pg-note-text">' + esc(n.content) + '</div>' +

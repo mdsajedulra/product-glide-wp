@@ -118,6 +118,7 @@ class PG_Orders {
 			) : null,
 			'next_invoice'  => PG_Steadfast::invoice_for( $order ),
 			'resched'       => PG_Reschedule::card( $order ),
+			'staff_notes'   => self::staff_notes( $order->get_id() ),
 			'dup'           => null,
 		);
 		if ( null === $dup_rows ) {
@@ -277,6 +278,14 @@ class PG_Orders {
 			$keys[] = PG_Helpers::phone_key( $o->get_billing_phone() );
 		}
 		$dups  = PG_Helpers::orders_by_phone_keys( $keys );
+		self::prefetch_notes(
+			array_map(
+				function ( $o ) {
+					return $o->get_id();
+				},
+				$orders
+			)
+		);
 		$fraud = PG_Fraud::cached_many(
 			array_map(
 				function ( $o ) {
@@ -345,6 +354,58 @@ class PG_Orders {
 		return array_slice( $ids, 0, 300 );
 	}
 
+	/** Staff notes shown on the card without opening the Notes panel. */
+	private static $note_cache = array();
+
+	/** True for notes a person wrote (not WooCommerce / status-change notes). */
+	public static function is_staff_note( $content, $author ) {
+		if ( '' === (string) $author || 'woocommerce' === strtolower( (string) $author ) || 'system' === strtolower( (string) $author ) ) {
+			return false;
+		}
+		$t = trim( wp_strip_all_tags( (string) $content ) );
+		return ! preg_match( '/Order status changed from|^Status changed from Product Glide|^Rescheduled to |^Follow-up done after reschedule/i', $t );
+	}
+
+	/** Latest staff notes for many orders in one query: id => array( total, notes[] ). */
+	public static function prefetch_notes( array $ids, $per = 3 ) {
+		global $wpdb;
+		$ids = array_values( array_filter( array_map( 'absint', $ids ) ) );
+		foreach ( $ids as $id ) {
+			self::$note_cache[ $id ] = array( 'total' => 0, 'notes' => array() );
+		}
+		if ( ! $ids ) {
+			return;
+		}
+		$rows = $wpdb->get_results( // phpcs:ignore
+			"SELECT c.comment_ID, c.comment_post_ID, c.comment_content, c.comment_author, c.comment_date_gmt, m.meta_value AS is_customer
+			 FROM {$wpdb->comments} c LEFT JOIN {$wpdb->commentmeta} m ON m.comment_id = c.comment_ID AND m.meta_key = 'is_customer_note'
+			 WHERE c.comment_type = 'order_note' AND c.comment_post_ID IN (" . implode( ',', $ids ) . ')
+			 ORDER BY c.comment_ID DESC'
+		);
+		foreach ( $rows as $r ) {
+			if ( ! self::is_staff_note( $r->comment_content, $r->comment_author ) ) {
+				continue;
+			}
+			$id = (int) $r->comment_post_ID;
+			self::$note_cache[ $id ]['total']++;
+			if ( count( self::$note_cache[ $id ]['notes'] ) < $per ) {
+				self::$note_cache[ $id ]['notes'][] = array(
+					'content'  => wp_strip_all_tags( $r->comment_content ),
+					'by'       => (string) $r->comment_author,
+					'date'     => PG_Helpers::bd_time( $r->comment_date_gmt, 'd M, h:i A' ),
+					'customer' => ! empty( $r->is_customer ),
+				);
+			}
+		}
+	}
+
+	public static function staff_notes( $order_id ) {
+		if ( ! isset( self::$note_cache[ $order_id ] ) ) {
+			self::prefetch_notes( array( $order_id ) );
+		}
+		return self::$note_cache[ $order_id ];
+	}
+
 	public static function notes_data( $order_id ) {
 		$notes = wc_get_order_notes( array( 'order_id' => $order_id ) );
 		$out   = array();
@@ -358,6 +419,8 @@ class PG_Orders {
 				'by'       => $system ? 'System' : (string) $n->added_by,
 				'type'     => $type,
 				'editable' => 'private' === $type,
+				'staff'    => ! $system && self::is_staff_note( $n->content, $n->added_by ),
+				'short'    => PG_Helpers::bd_time( $n->date_created, 'd M, h:i A' ),
 			);
 		}
 		return $out;
