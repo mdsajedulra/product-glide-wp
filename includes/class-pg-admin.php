@@ -23,7 +23,7 @@ class PG_Admin {
 		$n = PG_Leads::enabled() ? (int) PG_Leads::badge_count() : 0;
 		add_submenu_page( 'product-glide', __( 'Incomplete Orders', 'product-glide' ), __( 'Incomplete Orders', 'product-glide' ) . ( $n ? ' <span class="awaiting-mod">' . $n . '</span>' : '' ), $cap, 'pg-leads', array( __CLASS__, 'page_leads' ) );
 		add_submenu_page( 'product-glide', __( 'Package Builder', 'product-glide' ), __( 'Package Builder', 'product-glide' ), $cap, 'pg-packages', array( __CLASS__, 'page_packages' ) );
-		add_submenu_page( 'product-glide', __( 'Screenshot Order', 'product-glide' ), __( 'Screenshot Order', 'product-glide' ), $cap, 'pg-ocr', array( __CLASS__, 'page_ocr' ) );
+		add_submenu_page( 'product-glide', __( 'New Order', 'product-glide' ), __( 'New Order', 'product-glide' ), $cap, 'pg-ocr', array( __CLASS__, 'page_ocr' ) );
 		add_submenu_page( 'product-glide', __( 'Profit & Stock', 'product-glide' ), __( 'Profit & Stock', 'product-glide' ), 'manage_options', 'pg-profit', array( __CLASS__, 'page_profit' ) );
 		add_submenu_page( 'product-glide', __( 'Team', 'product-glide' ), __( 'Team', 'product-glide' ), 'manage_options', 'pg-team', array( __CLASS__, 'page_team' ) );
 		if ( PG_Courier::enabled( 'steadfast' ) ) {
@@ -104,6 +104,7 @@ class PG_Admin {
 			'waReady'     => PG_WhatsApp::configured(),
 			'fraudAuto'   => (bool) $s['fraud_auto'],
 			'pkgDelivery' => (float) $s['pkg_delivery_charge'],
+			'aiOn'        => '' !== (string) $s['or_key'] && '' !== trim( (string) $s['or_model'] ),
 			'fraudPanel'  => PG_Fraud::PANEL_URL,
 			'trackUrl'    => PG_Steadfast::TRACK_URL,
 			'adminUrl'    => admin_url(),
@@ -241,7 +242,7 @@ class PG_Admin {
 
 	public static function page_ocr() {
 		echo '<div class="pg-wrap" id="pg-ocr">';
-		self::header( __( 'New Order from Screenshot', 'product-glide' ) );
+		self::header( __( 'New Order', 'product-glide' ) );
 		echo '<div id="pg-ocr-root"></div></div>';
 	}
 

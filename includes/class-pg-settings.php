@@ -22,6 +22,10 @@ class PG_Settings {
 			'items_per_slip'      => 3,
 			'invoice_footer'      => 'ধন্যবাদ! আমাদের সাথে কেনাকাটার জন্য।',
 			'pkg_delivery_charge' => 60,
+			'del_inside'          => 60,
+			'del_suburb'          => 120,
+			'del_outside'         => 120,
+			'del_suburb_list'     => PG_Address::SUBURB_DEFAULT,
 			// Invoice (blank = taken from the website automatically).
 			'inv_page_size'       => 'a4',
 			'inv_template'        => 'classic',
@@ -120,7 +124,7 @@ class PG_Settings {
 		$defs = self::defaults();
 		$in   = wp_unslash( $_POST ); // phpcs:ignore
 
-		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret', 'sf_pickup_address', 'sf_pickup_phone', 'sf_pickup_note' );
+		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret', 'sf_pickup_address', 'sf_pickup_phone', 'sf_pickup_note', 'del_suburb_list' );
 		foreach ( $text_keys as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = in_array( $k, array( 'logo_url', 'sf_base_url', 'inv_logo' ), true ) ? esc_url_raw( trim( $in[ $k ] ) ) : sanitize_text_field( $in[ $k ] );
@@ -155,7 +159,7 @@ class PG_Settings {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
 		}
-		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return' ) as $k ) {
+		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 0, (float) $in[ $k ] );
 			}
@@ -446,6 +450,18 @@ class PG_Settings {
 						self::field_textarea( 'shop_address', __( 'Shop address', 'product-glide' ), $s );
 						self::field_number( 'items_per_slip', __( 'Items per printed slip (larger orders continue on the next slip)', 'product-glide' ), $s );
 						self::field_number( 'pkg_delivery_charge', __( 'Default package delivery charge (BDT)', 'product-glide' ), $s );
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Delivery charge on new orders', 'product-glide' ) . '</h3>';
+						if ( PG_Address::bdsa() ) {
+							echo '<p class="pg-muted">' . esc_html__( 'BD Smart Address is active, so new orders use its charges (same as checkout). Change them in BD Smart Address settings.', 'product-glide' ) . ' ' . esc_html( sprintf( 'Dhaka city ৳%s · Sub-urban ৳%s · Outside Dhaka ৳%s', PG_Address::fee( 'inside' ), PG_Address::fee( 'suburb' ), PG_Address::fee( 'outside' ) ) ) . '</p>';
+						} else {
+							echo '<p class="pg-muted">' . esc_html__( 'When the district / thana is found from the address, the delivery charge is filled in from these.', 'product-glide' ) . '</p>';
+							echo '<div class="pg-grid pg-grid-3">';
+							self::field_number( 'del_inside', __( 'Inside Dhaka city (BDT)', 'product-glide' ), $s );
+							self::field_number( 'del_suburb', __( 'Sub-urban Dhaka (BDT)', 'product-glide' ), $s );
+							self::field_number( 'del_outside', __( 'Outside Dhaka (BDT)', 'product-glide' ), $s );
+							echo '</div>';
+							self::field_text( 'del_suburb_list', __( 'Also sub-urban (District or District:Thana, comma separated). Savar, Keraniganj, Dhamrai, Nawabganj, Dohar are always sub-urban.', 'product-glide' ), $s );
+						}
 						echo '<h3 class="pg-set-h">' . esc_html__( 'Couriers', 'product-glide' ) . '</h3>';
 						echo '<p class="pg-muted">' . esc_html__( 'Turn on the couriers you use. A courier that is off is hidden everywhere (Send buttons, courier choice, its menu and settings tab). Parcels already sent with it keep updating until they finish.', 'product-glide' ) . '</p>';
 						self::field_check( 'sf_enabled', __( 'Steadfast', 'product-glide' ), $s );

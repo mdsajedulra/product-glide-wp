@@ -276,6 +276,9 @@ class PG_Packages {
 		if ( ! empty( $customer['note'] ) ) {
 			$order->set_customer_note( sanitize_textarea_field( $customer['note'] ) );
 		}
+		if ( isset( $customer['district'] ) && '' !== (string) $customer['district'] ) {
+			PG_Address::apply_to_order( $order, $customer['district'], isset( $customer['thana'] ) ? $customer['thana'] : '', sanitize_text_field( $customer['address'] ) );
+		}
 		$order->update_meta_data( '_pg_source', $source );
 		$order->calculate_totals( false );
 		$order->save();
@@ -298,7 +301,7 @@ class PG_Packages {
 		$c     = PG_Helpers::post_json( 'customer' );
 		$items = PG_Helpers::post_json( 'items' );
 		$cust  = array();
-		foreach ( array( 'name', 'phone', 'address', 'city', 'payment', 'email' ) as $k ) {
+		foreach ( array( 'name', 'phone', 'address', 'city', 'payment', 'email', 'district', 'thana' ) as $k ) {
 			$cust[ $k ] = isset( $c[ $k ] ) ? sanitize_text_field( $c[ $k ] ) : '';
 		}
 		$cust['note'] = isset( $c['note'] ) ? sanitize_textarea_field( $c['note'] ) : '';

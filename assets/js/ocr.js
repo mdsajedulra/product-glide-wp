@@ -13,7 +13,13 @@
 		root.innerHTML =
 			'<div class="pg-pkg pg-ocr">' +
 			'<div>' +
-				'<div class="pg-card"><div class="pg-card-head"><h2>1. Screenshot</h2><span class="pg-muted">Optional</span></div>' +
+				'<div class="pg-card pg-quick"><div class="pg-card-head"><h2>1. Paste the customer\'s message</h2><span class="pg-muted">Text or screenshot</span></div>' +
+					'<textarea class="pg-quick-msg" data-msg rows="6" placeholder="Copy the customer\'s Messenger / WhatsApp message and paste it here (Ctrl+V).\nName, phone, address, district, thana, delivery charge and books fill in by themselves."></textarea>' +
+					'<div class="pg-quick-bar"><span class="pg-quick-status" data-msg-status></span>' +
+						'<button type="button" class="pg-btn pg-btn-ghost pg-btn-sm" data-msg-clear hidden>Clear</button>' +
+						(cfg.aiOn ? '<button type="button" class="pg-btn pg-btn-sm" data-msg-ai disabled title="For messy messages: let AI read it">✨ Read with AI</button>' : '') +
+						'<button type="button" class="pg-btn pg-btn-primary pg-btn-sm" data-msg-read disabled>Fill the form</button></div>' +
+					'<div class="pg-or"><span>or a screenshot / photo</span></div>' +
 					'<label class="pg-drop" data-drop tabindex="0">' +
 						'<input type="file" accept="image/*" data-file hidden>' +
 						'<span class="pg-drop-empty">' +
@@ -26,8 +32,9 @@
 						'<span class="pg-drop-preview" data-preview hidden></span>' +
 					'</label>' +
 					'<div class="pg-form-actions"><button type="button" class="pg-btn" data-clear hidden>Remove image</button><button type="button" class="pg-btn pg-btn-primary" data-read disabled>Read with AI</button></div>' +
+					(cfg.aiOn ? '' : '<p class="pg-muted" style="margin:6px 0 0">Reading screenshots needs an OpenRouter key in Settings → AI / OCR.</p>') +
 				'</div>' +
-				'<div class="pg-card" data-matches-card hidden><div class="pg-card-head"><h2>Books found</h2></div><div data-matches></div></div>' +
+				'<div class="pg-card" data-matches-card hidden><div class="pg-card-head"><h2>Products found</h2></div><div data-matches></div></div>' +
 			'</div>' +
 			'<div>' +
 				'<div class="pg-card"><div class="pg-card-head"><h2>2. Customer</h2></div><div data-form>' + window.PGOrderForm.formHtml({}) + '</div>' +
@@ -37,7 +44,7 @@
 					'<div class="pg-pp-cart-head">In this order</div>' +
 					'<div data-items></div>' +
 					'<div class="pg-grid pg-grid-2" style="margin-top:10px"><div class="pg-field"><label>Discount (৳)</label><input type="number" min="0" step="1" data-discount value="0"></div>' +
-					'<div class="pg-field"><label>Delivery charge (৳)</label><input type="number" min="0" step="1" data-delivery value="' + esc(cfg.pkgDelivery || 0) + '"></div></div>' +
+					'<div class="pg-field"><label>Delivery charge (৳) <span class="pg-del-auto" data-del-auto></span></label><input type="number" min="0" step="1" data-delivery value="' + esc(cfg.pkgDelivery || 0) + '"></div></div>' +
 					'<div class="pg-pkg-sum" data-sum></div>' +
 					'<div class="pg-form-actions"><button type="button" class="pg-btn pg-btn-primary" data-create>Create order</button></div>' +
 					'<div data-done></div>' +
@@ -58,6 +65,7 @@
 			$drop.classList.toggle('has-image', !!data);
 			$read.disabled = !data;
 			$clear.hidden = !data;
+			if (data && cfg.aiOn) { setTimeout(function () { $read.click(); }, 50); }
 		}
 
 		function takeFile(file) {
@@ -89,20 +97,105 @@
 			if (!imageData) { return; }
 			A.busy($read, true);
 			A.ajax('pg_ocr_parse', { image: imageData }).then(function (d) {
-				var r = d.data;
-				var addr = [r.address, r.thana, r.district].filter(function (x, i, a) { return x && a.indexOf(x) === i && (i === 0 || r.address.indexOf(x) === -1); }).join(', ');
-				$form.innerHTML = window.PGOrderForm.formHtml({ name: r.name, phone: r.phone_bd || r.phone, address: addr, city: r.district, note: [r.note, r.alt_phone ? 'Alt: ' + r.alt_phone : ''].filter(Boolean).join(' | ') });
-				renderMatches(r.matches || [], r.books || []);
-				checkPhone();
-				A.toast('Details extracted — please check before creating.', 'ok');
+				apply(d.data, 'screenshot');
 			}).catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy($read, false); });
 		});
+
+		/* ---------- Pasted text ---------- */
+
+		var $msg = $('[data-msg]'), $msgRead = $('[data-msg-read]'), $msgAi = $('[data-msg-ai]'), $msgClear = $('[data-msg-clear]'), $status = $('[data-msg-status]');
+		var lastRead = '';
+
+		function msgState() {
+			var has = !!$msg.value.trim();
+			$msgRead.disabled = !has;
+			if ($msgAi) { $msgAi.disabled = !has; }
+			$msgClear.hidden = !has;
+		}
+		function readText(force) {
+			var t = $msg.value.trim();
+			if (!t || (!force && t === lastRead)) { return; }
+			lastRead = t;
+			A.busy($msgRead, true);
+			A.ajax('pg_parse_text', { text: t }).then(function (d) { apply(d.data, 'text'); })
+				.catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy($msgRead, false); });
+		}
+		var readSoon = A.debounce(function () { readText(false); }, 900);
+		$msg.addEventListener('paste', function () { setTimeout(function () { msgState(); readText(true); }, 0); });
+		$msg.addEventListener('input', function () { msgState(); readSoon(); });
+		$msgRead.addEventListener('click', function () { readText(true); });
+		$msgClear.addEventListener('click', function () { $msg.value = ''; lastRead = ''; msgState(); $status.innerHTML = ''; $msg.focus(); });
+		if ($msgAi) {
+			$msgAi.addEventListener('click', function () {
+				var t = $msg.value.trim();
+				if (!t) { return; }
+				A.busy($msgAi, true);
+				A.ajax('pg_ocr_parse', { text: t }).then(function (d) { apply(d.data, 'ai'); })
+					.catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy($msgAi, false); });
+			});
+		}
+
+		/* ---------- Fill the form from a reading (text, AI or screenshot) ---------- */
+
+		var autoIds = [], deliveryTouched = false;
+
+		function apply(r, how) {
+			var geo = r.geo || {};
+			var cur = window.PGOrderForm.read($form);
+			var alt = r.alt || r.alt_phone || '';
+			var note = [r.note, alt ? 'Alt: ' + alt : ''].filter(Boolean).join(' | ');
+			var phone = r.phone_bd || r.phone || '';
+			var addr = geo.full || r.full || r.address || '';
+			var p = {
+				name: r.name || cur.name,
+				phone: phone || cur.phone,
+				address: addr || cur.address,
+				district: geo.district != null ? geo.district : cur.district,
+				thana: geo.district != null ? geo.thana : cur.thana,
+				note: note || cur.note,
+				payment: cur.payment
+			};
+			$form.innerHTML = window.PGOrderForm.formHtml(p);
+			deliveryTouched = false;
+			window.PGOrderForm.initGeo($form, { detect: true });
+			// Replace books added by the previous reading; keep ones added by hand.
+			items = items.filter(function (it) { return autoIds.indexOf(it.product_id) === -1; });
+			autoIds = [];
+			renderMatches(r.matches || [], r.books || []);
+			checkPhone();
+
+			var got = [], miss = [];
+			(p.name ? got : miss).push('name');
+			(phone ? got : miss).push('phone');
+			(addr ? got : miss).push('address');
+			if (geo.district != null) { got.push(geo.district_en + (geo.thana_en ? ' › ' + geo.thana_en : '')); } else { miss.push('district'); }
+			if (geo.district != null && geo.thana == null) { miss.push('thana'); }
+			if (autoIds.length) { got.push(autoIds.length + ' product' + (autoIds.length > 1 ? 's' : '')); }
+			$status.innerHTML = '<span class="ok">✓ ' + esc(got.join(' · ')) + '</span>' + (miss.length ? '<span class="miss">Check: ' + esc(miss.join(', ')) + '</span>' : '');
+			['name', 'phone', 'address', 'district', 'thana'].forEach(function (f) {
+				var el = $form.querySelector('[data-f="' + f + '"]');
+				if (el) { el.classList.toggle('pg-missing', miss.indexOf(f) > -1); }
+			});
+			A.toast((how === 'screenshot' ? 'Screenshot read' : 'Form filled') + ' — please check before creating.', miss.length ? 'warn' : 'ok');
+		}
+
+		$form.addEventListener('pg:zone', function (e) {
+			var z = e.detail, lbl = $('[data-del-auto]');
+			if (!z) { lbl.textContent = ''; return; }
+			if (!deliveryTouched) {
+				$('[data-delivery]').value = z.fee;
+				renderSum();
+			}
+			lbl.textContent = deliveryTouched ? '(' + z.label + ': ' + z.fee + ')' : '· auto: ' + z.label;
+		});
+		$form.addEventListener('input', function (e) { if (e.target.classList.contains('pg-missing') && e.target.value) { e.target.classList.remove('pg-missing'); } });
+		$form.addEventListener('change', function (e) { if (e.target.classList.contains('pg-missing') && e.target.value) { e.target.classList.remove('pg-missing'); } });
 
 		function renderMatches(matches, books) {
 			var card = $('[data-matches-card]');
 			var box = $('[data-matches]');
 			card.hidden = false;
-			if (!matches.length) { box.innerHTML = '<div class="pg-muted">No book names found in the image. Add products manually.</div>'; return; }
+			if (!matches.length) { box.innerHTML = '<div class="pg-muted">No product names found. Add products from the list below.</div>'; renderItems(); return; }
 			box.innerHTML = matches.map(function (m, i) {
 				var qty = books[i] ? books[i].qty : 1;
 				if (!m.candidates.length) {
@@ -117,6 +210,7 @@
 			matches.forEach(function (m, i) {
 				if (m.candidates.length && m.candidates[0].score >= 60) {
 					addItem(m.candidates[0].product, books[i] ? books[i].qty : 1, true);
+					if (autoIds.indexOf(m.candidates[0].product.id) === -1) { autoIds.push(m.candidates[0].product.id); }
 				}
 			});
 			renderItems();
@@ -174,7 +268,10 @@
 			var t = e.target, pi = t.getAttribute('data-price'), qi = t.getAttribute('data-qty');
 			if (pi !== null) { items[pi].price = Number(t.value); renderSum(); }
 			else if (qi !== null) { items[qi].qty = Math.max(1, parseInt(t.value, 10) || 1); renderSum(); }
-			else if (t.hasAttribute('data-discount') || t.hasAttribute('data-delivery')) { renderSum(); }
+			else if (t.hasAttribute('data-discount') || t.hasAttribute('data-delivery')) {
+				if (t.hasAttribute('data-delivery')) { deliveryTouched = true; var z = window.PGOrderForm.zoneOf($form); $('[data-del-auto]').textContent = z ? '(' + z.label + ': ' + z.fee + ')' : ''; }
+				renderSum();
+			}
 		});
 
 		var picker = window.PGProductPicker.mount($('[data-picker]'), {
@@ -206,13 +303,17 @@
 					$('[data-done]').innerHTML = window.PGOrderForm.successHtml(o);
 					items = []; renderItems();
 					$form.innerHTML = window.PGOrderForm.formHtml({});
+					window.PGOrderForm.initGeo($form, { detect: true });
 					$('[data-hist-hint]').innerHTML = '';
-					setImage('');
+					$msg.value = ''; lastRead = ''; msgState(); $status.innerHTML = ''; autoIds = []; deliveryTouched = false;
+					$('[data-delivery]').value = cfg.pkgDelivery || 0; renderSum();
+					imageData = ''; setImage('');
 					if (opts.onCreated) { opts.onCreated(o); }
 				}).catch(function () {});
 		});
 
-		var inst = { root: root, takeFile: takeFile };
+		window.PGOrderForm.initGeo($form, { detect: true });
+		var inst = { root: root, takeFile: takeFile, takeText: function (t) { $msg.value = t; msgState(); readText(true); } };
 		active = inst;
 		renderItems();
 		return inst;
@@ -222,7 +323,12 @@
 	document.addEventListener('paste', function (e) {
 		if (!active || !document.body.contains(active.root)) { return; }
 		var it = Array.from((e.clipboardData || {}).items || []).find(function (x) { return x.type.indexOf('image/') === 0; });
-		if (it) { active.takeFile(it.getAsFile()); }
+		if (it) { e.preventDefault(); active.takeFile(it.getAsFile()); return; }
+		// Text pasted while not typing in a field → treat it as the customer's message.
+		var tag = (document.activeElement && document.activeElement.tagName) || '';
+		if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (document.activeElement && document.activeElement.isContentEditable)) { return; }
+		var txt = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+		if (txt.trim()) { e.preventDefault(); active.takeText(txt); }
 	});
 
 	window.PGOcrForm = { mount: mount };

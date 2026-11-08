@@ -717,3 +717,23 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 .pg-snote-meta span { color: #15803d; font-weight: 600; }
 .pg-snote-more { align-self: flex-start; border: 0; background: none; color: var(--pg-primary-2); font: 600 12.5px var(--pg-font); cursor: pointer; padding: 2px 0; }
 .pg-snote-more:hover { text-decoration: underline; }
+
+/* ---------- New order: paste the customer's message ---------- */
+.pg-toast-warn { background: #92400e; }
+.pg-quick-msg { width: 100%; min-height: 128px; padding: 12px 14px; border: 2px solid #c7d2fe; border-radius: 12px; background: #f8faff; font: 14px/1.55 var(--pg-font); resize: vertical; transition: border-color .15s, box-shadow .15s; }
+.pg-quick-msg:focus { outline: 0; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, .15); background: #fff; }
+.pg-quick-msg::placeholder { color: #94a3b8; }
+.pg-quick-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.pg-quick-status { flex: 1 1 220px; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; min-height: 18px; }
+.pg-quick-status .ok { color: #047857; font-weight: 600; }
+.pg-quick-status .miss { color: #b45309; }
+.pg-or { display: flex; align-items: center; gap: 10px; margin: 16px 0 12px; color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.pg-or::before, .pg-or::after { content: ""; flex: 1; height: 1px; background: #e2e8f0; }
+.pg-quick .pg-drop { min-height: 120px; padding: 16px; }
+.pg-geo-zone { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -2px 0 12px; padding: 8px 12px; border-radius: 10px; font-size: 13px; background: #f1f5f9; color: #334155; }
+.pg-geo-zone b { font-size: 14px; }
+.pg-geo-zone.is-inside { background: #ecfdf5; color: #065f46; }
+.pg-geo-zone.is-suburb { background: #eff6ff; color: #1e40af; }
+.pg-geo-zone.is-outside { background: #fff7ed; color: #9a3412; }
+.pg-del-auto { font-weight: 400; color: #64748b; font-size: 12px; }
+.pg-field .pg-missing, .pg-missing { border-color: #f59e0b !important; background: #fffbeb !important; box-shadow: 0 0 0 2px rgba(245, 158, 11, .15); }

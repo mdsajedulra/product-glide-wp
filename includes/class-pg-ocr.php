@@ -88,19 +88,28 @@ class PG_OCR {
 
 	public static function ajax_parse() {
 		PG_Helpers::guard_ajax();
-		$img = isset( $_POST['image'] ) ? (string) wp_unslash( $_POST['image'] ) : ''; // phpcs:ignore -- base64 image data, validated below.
-		if ( ! preg_match( '#^data:(image/(?:png|jpe?g|webp|heic|heif));base64,([A-Za-z0-9+/=\s]+)$#', $img, $m ) ) {
-			wp_send_json_error( array( 'message' => __( 'Upload a PNG, JPG or WEBP image.', 'product-glide' ) ) );
+		$msg = isset( $_POST['text'] ) ? sanitize_textarea_field( wp_unslash( $_POST['text'] ) ) : ''; // phpcs:ignore
+		if ( '' !== trim( $msg ) ) {
+			$text = self::chat(
+				array(
+					array( 'type' => 'text', 'text' => str_replace( 'order screenshots (Messenger/WhatsApp chats, notes, visiting cards)', 'order messages copied from Messenger/WhatsApp chats', self::prompt() ) . "\n\nCustomer message:\n" . mb_substr( $msg, 0, 4000 ) ),
+				)
+			);
+		} else {
+			$img = isset( $_POST['image'] ) ? (string) wp_unslash( $_POST['image'] ) : ''; // phpcs:ignore -- base64 image data, validated below.
+			if ( ! preg_match( '#^data:(image/(?:png|jpe?g|webp|heic|heif));base64,([A-Za-z0-9+/=\s]+)$#', $img, $m ) ) {
+				wp_send_json_error( array( 'message' => __( 'Upload a PNG, JPG or WEBP image.', 'product-glide' ) ) );
+			}
+			if ( strlen( $m[2] ) > 14 * MB_IN_BYTES ) {
+				wp_send_json_error( array( 'message' => __( 'Image is too large (max ~10 MB).', 'product-glide' ) ) );
+			}
+			$text = self::chat(
+				array(
+					array( 'type' => 'text', 'text' => self::prompt() ),
+					array( 'type' => 'image_url', 'image_url' => array( 'url' => 'data:' . $m[1] . ';base64,' . preg_replace( '/\s+/', '', $m[2] ) ) ),
+				)
+			);
 		}
-		if ( strlen( $m[2] ) > 14 * MB_IN_BYTES ) {
-			wp_send_json_error( array( 'message' => __( 'Image is too large (max ~10 MB).', 'product-glide' ) ) );
-		}
-		$text = self::chat(
-			array(
-				array( 'type' => 'text', 'text' => self::prompt() ),
-				array( 'type' => 'image_url', 'image_url' => array( 'url' => 'data:' . $m[1] . ';base64,' . preg_replace( '/\s+/', '', $m[2] ) ) ),
-			)
-		);
 		if ( is_wp_error( $text ) ) {
 			wp_send_json_error( array( 'message' => $text->get_error_message() ) );
 		}
@@ -126,6 +135,7 @@ class PG_OCR {
 			}
 		}
 		$clean['matches'] = self::match_titles( wp_list_pluck( $clean['books'], 'title' ) );
+		$clean['geo']     = PG_Address::analyze( $clean['address'], $clean['district'], $clean['thana'] );
 		wp_send_json_success( array( 'data' => $clean ) );
 	}
 
