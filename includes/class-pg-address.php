@@ -176,7 +176,11 @@ class PG_Address {
 		$g    = self::geo();
 		$bn   = (bool) preg_match( '/[\x{0980}-\x{09FF}]/u', (string) $typed );
 		$segs = '' === trim( $refined ) ? array() : preg_split( '/\s*,\s*/u', trim( $refined ) );
-		$hay  = ' ' . $g::norm( implode( ' ', $segs ) ) . ' ';
+		$fold = function ( $x ) use ( $g ) {
+			// য়/ড়/ঢ় can be typed as one letter or as letter + nukta: compare them the same way.
+			return str_replace( array( "\u{09AF}\u{09BC}", "\u{09A1}\u{09BC}", "\u{09A2}\u{09BC}" ), array( "\u{09DF}", "\u{09DC}", "\u{09DD}" ), $g::norm( $x ) );
+		};
+		$hay  = ' ' . $fold( implode( ' ', $segs ) ) . ' ';
 		foreach ( array( $u, $d ) as $x ) {
 			if ( ! $x ) {
 				continue;
@@ -184,7 +188,7 @@ class PG_Address {
 			$names = $u === $x ? array( $x[0], $x[1] ) : array_merge( array( $x['n'], $x['b'] ), isset( $x['a'] ) ? (array) $x['a'] : array() );
 			$found = false;
 			foreach ( $names as $n ) {
-				$nn = $g::norm( $n );
+				$nn = $fold( $n );
 				if ( '' !== $nn && false !== strpos( $hay, ' ' . $nn ) ) {
 					$found = true;
 					break;
@@ -364,12 +368,12 @@ class PG_Address {
 				continue;
 			}
 			$r       = $g::analyze( $no_phone );
-			$looks   = null !== $r['district'] || null !== $r['thana'] || preg_match( '/(বাসা|বাড়ি|বাড়ী|রোড|সড়ক|গ্রাম|গ্রামঃ|পোস্ট|পোঃ|ডাকঘর|থানা|উপজেলা|জেলা|মোড়|বাজার|সেক্টর|ব্লক|হাউস|ফ্ল্যাট|মহল্লা|পাড়া|লেন|house|road|rd\b|sector|block|flat|village|vill|post|p\.?o\b|lane|bazar|bazaar|more\b|moor|para|tower|building|bari|bariya)/iu', $no_phone );
+			$looks   = null !== $r['district'] || null !== $r['thana'] || ( preg_match( '/(বাসা|বাড়ি|বাড়ী|রোড|সড়ক|গ্রাম|পোস্ট|পোঃ|ডাকঘর|থানা|উপজেলা|জেলা|মোড়|বাজার|সেক্টর|ব্লক|হাউস|ফ্ল্যাট|মহল্লা|পাড়া|লেন)/u', $no_phone ) || preg_match( '/(?<![a-z])(house|road|rd|sector|block|flat|village|vill|post|p\.?o|lane|bazar|bazaar|more|moor|para|tower|building|bari|bariya|avenue|colony|market|school|college|madrasa|mosque|masjid)(?![a-z])/i', $no_phone ) );
 			$words   = preg_split( '/\s+/u', $no_phone );
-			$is_name = '' === $out['name'] && ! $looks && count( $words ) <= 4 && ! preg_match( '/\d/', $no_phone ) && ! preg_match( '/(বই|book|hsk|টাকা|tk|৳|অর্ডার|order|চাই|দিন|লাগবে|পাঠান|please|plz|ভাই|আপু|স্যার|hi|hello|assalam|আসসালামু|সালাম)/iu', $no_phone );
+			$is_name = '' === $out['name'] && ! $looks && count( $words ) <= 4 && ! preg_match( '/\d/', $no_phone ) && ! preg_match( '/(বই|টাকা|৳|অর্ডার|চাই|দিন|লাগবে|পাঠান|ভাই|আপু|স্যার|আসসালামু|সালাম|কেজি|লিটার|গ্রাম|প্যাকেট)/u', $no_phone ) && ! preg_match( '/(?<![a-z])(book|books|hsk|tk|taka|order|please|plz|hi|hello|assalam|salam|kg|gm|ltr|litre|liter|pcs|packet|combo)(?![a-z])/i', $no_phone );
 			if ( $is_name ) {
 				$out['name'] = $no_phone;
-			} elseif ( $looks && ( ! $prod || $addr ) && ! preg_match( '/(বই|book|hsk|কপি|pcs)/iu', $no_phone ) ) {
+			} elseif ( $looks && ( ! $prod || $addr ) && ! preg_match( '/(বই|কপি|কেজি|লিটার|প্যাকেট)/u', $no_phone ) && ! preg_match( '/(?<![a-z])(book|books|hsk|pcs|kg|gm|ltr|combo)(?![a-z])/i', $no_phone ) ) {
 				$addr[] = $no_phone;
 			} else {
 				$rest[] = $no_phone;

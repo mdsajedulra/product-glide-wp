@@ -196,7 +196,7 @@ class PG_OCR {
 	}
 
 	private static function norm( $s ) {
-		$s = mb_strtolower( (string) $s );
+		$s = mb_strtolower( str_replace( array( '০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯' ), range( 0, 9 ), (string) $s ) );
 		$s = str_replace( array( "\u{200D}", "\u{200C}" ), '', $s ); // ZWJ / ZWNJ.
 		$s = preg_replace( '/[^\p{L}\p{M}\p{N}\s]+/u', ' ', $s );
 		$stop = array( 'বই', 'book', 'books', 'এর', 'জন্য', 'the', 'and', 'মাত্র', 'টাকা', 'কম্বো', 'combo' );
@@ -228,8 +228,9 @@ class PG_OCR {
 		$overlap = $hit / count( $ta );
 		similar_text( implode( ' ', $ta ), implode( ' ', $tb ), $pct );
 		// HSK / level numbers must agree when both mention one.
-		preg_match_all( '/\d+/', $a, $na );
-		preg_match_all( '/\d+/', $b, $nb );
+		$bn = array( '০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯' );
+		preg_match_all( '/\d+/', str_replace( $bn, range( 0, 9 ), $a ), $na );
+		preg_match_all( '/\d+/', str_replace( $bn, range( 0, 9 ), $b ), $nb );
 		$penalty = ( $na[0] && $nb[0] && ! array_intersect( $na[0], $nb[0] ) ) ? 25 : 0;
 		return max( 0, (int) round( $overlap * 70 + $pct * 0.3 - $penalty ) );
 	}
