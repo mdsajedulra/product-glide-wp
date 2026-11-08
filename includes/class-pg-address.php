@@ -392,7 +392,7 @@ class PG_Address {
 		// Products: labelled product lines first, then any other leftover line.
 		$segments = array();
 		foreach ( array_merge( $prod, $rest ) as $line ) {
-			foreach ( preg_split( '/\s*(?:,|،|\+|;|\/| এবং | আর | and |&)\s*/u', $line ) as $seg ) {
+			foreach ( preg_split( '/\s*(?:,|،|\+|;|\/| এবং | আর | ও | and | ar | ebong |&)\s*/u', $line ) as $seg ) {
 				$seg = trim( $seg );
 				if ( mb_strlen( $seg ) >= 2 ) {
 					$segments[] = $seg;
