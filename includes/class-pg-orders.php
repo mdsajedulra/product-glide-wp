@@ -444,9 +444,68 @@ class PG_Orders {
 			wp_send_json_error( array( 'message' => __( 'Write a note first.', 'product-glide' ) ) );
 		}
 		$is_customer = (bool) PG_Helpers::post_int( 'customer' );
-		$order->add_order_note( $text, $is_customer ? 1 : 0, true );
+		self::add_staff_note( $order, $text, $is_customer );
 		PG_Team::log( $order->get_id(), 'note', $text );
 		wp_send_json_success( array( 'notes' => self::notes_data( $order->get_id() ) ) );
+	}
+
+	/**
+	 * Add a note in the name of the logged-in staff member.
+	 * WooCommerce only names the author when the user has edit_shop_orders; Order Managers do not,
+	 * so their notes were saved as "WooCommerce" and looked like system notes.
+	 */
+	public static function add_staff_note( $order, $text, $is_customer = false ) {
+		$user = wp_get_current_user();
+		$f    = null;
+		if ( $user && $user->exists() ) {
+			$f = function ( $data ) use ( $user ) {
+				$data['comment_author']       = $user->display_name ? $user->display_name : $user->user_login;
+				$data['comment_author_email'] = $user->user_email;
+				return $data;
+			};
+			add_filter( 'woocommerce_new_order_note_data', $f, 99 );
+		}
+		$id = $order->add_order_note( $text, $is_customer ? 1 : 0, true );
+		if ( $f ) {
+			remove_filter( 'woocommerce_new_order_note_data', $f, 99 );
+		}
+		return $id;
+	}
+
+	/**
+	 * One-time repair: notes Order Managers wrote before 1.10.3 were saved as "WooCommerce".
+	 * The team activity log knows who wrote each note, so give those notes their real author.
+	 */
+	public static function repair_note_authors() {
+		if ( get_option( 'pg_note_authors_fixed' ) ) {
+			return;
+		}
+		update_option( 'pg_note_authors_fixed', 1, false );
+		global $wpdb;
+		$log  = PG_Team::table();
+		$rows = $wpdb->get_results( "SELECT user_id, order_id, detail, created_at FROM {$log} WHERE action = 'note' ORDER BY id DESC LIMIT 5000" ); // phpcs:ignore
+		$done = 0;
+		foreach ( (array) $rows as $r ) {
+			$u = get_userdata( (int) $r->user_id );
+			if ( ! $u ) {
+				continue;
+			}
+			$cid = $wpdb->get_var( // phpcs:ignore
+				$wpdb->prepare(
+					"SELECT comment_ID FROM {$wpdb->comments} WHERE comment_post_ID = %d AND comment_type = 'order_note' AND comment_author IN ('WooCommerce','System','') AND LEFT(comment_content, 250) = %s AND comment_date_gmt BETWEEN DATE_SUB(%s, INTERVAL 3 MINUTE) AND DATE_ADD(%s, INTERVAL 3 MINUTE) LIMIT 1",
+					(int) $r->order_id,
+					(string) $r->detail,
+					$r->created_at,
+					$r->created_at
+				)
+			);
+			if ( $cid ) {
+				$wpdb->update( $wpdb->comments, array( 'comment_author' => $u->display_name ? $u->display_name : $u->user_login, 'comment_author_email' => $u->user_email ), array( 'comment_ID' => (int) $cid ) ); // phpcs:ignore
+				clean_comment_cache( (int) $cid );
+				++$done;
+			}
+		}
+		update_option( 'pg_note_authors_fixed', max( 1, $done ), false );
 	}
 
 	private static function own_note( $order_id, $note_id ) {

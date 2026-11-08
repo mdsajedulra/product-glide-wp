@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Product Glide - All-in-One WooCommerce Courier & Order Hub
  * Description:       Fast, mobile-friendly order dashboard with Steadfast and Carrybee courier, fraud check, invoice printing, package builder, WhatsApp Cloud API, profit tracking and screenshot order creator. Runs natively inside WordPress (no external REST round-trips for order work).
- * Version:           1.10.2
+ * Version:           1.10.3
  * Author:            Md Sajedul Islam
  * Text Domain:       product-glide
  * Requires PHP:      7.4
@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PG_VERSION', '1.10.2' );
+define( 'PG_VERSION', '1.10.3' );
 define( 'PG_DB_VERSION', '1.3.0' );
 define( 'PG_FILE', __FILE__ );
 define( 'PG_DIR', plugin_dir_path( __FILE__ ) );
@@ -83,6 +83,9 @@ add_action(
 		}
 		PG_App::init();
 		PG_Install::maybe_upgrade();
+		if ( is_admin() || wp_doing_ajax() ) {
+			PG_Orders::repair_note_authors();
+		}
 		PG_Statuses::init();
 		PG_Steadfast::init();
 		PG_Carrybee::init();
