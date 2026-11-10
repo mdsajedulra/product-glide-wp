@@ -991,3 +991,8 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 .wa-quick .wa-quick-add textarea { flex: 1 1 auto; min-width: 0; width: 100%; }
 .wa-quick .wa-quick-add .pg-btn { flex: none; display: inline-flex; width: auto; height: 38px; padding: 0 16px; align-items: center; background: var(--wa-green); border-color: var(--wa-green); color: #fff; font-weight: 600; border-radius: 8px; text-align: center; }
 .wa-quick .wa-quick-add .pg-btn:hover { background: var(--wa-dark); }
+.pg-st-confirmed { background: #dcfce7; color: #166534; }
+.pg-st-call-later { background: #ffedd5; color: #9a3412; }
+.pg-st-unreachable { background: #fee2e2; color: #b91c1c; }
+.pg-st-printed { background: #e0e7ff; color: #3730a3; }
+.pg-status-tab[data-tab="processing"] .c:not(:empty) { background: #ea580c; color: #fff; }

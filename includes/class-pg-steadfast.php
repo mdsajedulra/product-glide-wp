@@ -461,6 +461,10 @@ class PG_Steadfast {
 		$map    = self::status_map();
 		$order  = wc_get_order( $row->order_id );
 		$target = isset( $map[ $status ] ) ? $map[ $status ] : '';
+		// Still "in review" at the courier, but the slip is already printed: keep it as Printed.
+		if ( 'courier_sent' === $target && $order && 'printed' === $order->get_status() ) {
+			$target = '';
+		}
 
 		if ( $target ) {
 			$upd['last_synced_status'] = $status;

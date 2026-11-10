@@ -161,6 +161,13 @@ class PG_Invoice {
 			if ( $o && 'shop_order' === $o->get_type() ) {
 				$orders[] = $o;
 				PG_Team::log( $o->get_id(), 'printed', count( $ids ) > 1 ? 'Bulk print (' . count( $ids ) . ')' : '' );
+				$o->update_meta_data( '_pg_printed', time() );
+				$o->save_meta_data();
+				if ( 'courier_sent' === $o->get_status() ) {
+					PG_Team::$quiet = true; // already logged as "printed"
+					$o->update_status( 'printed', __( 'Courier slip printed.', 'product-glide' ) );
+					PG_Team::$quiet = false;
+				}
 			}
 		}
 		$tpls = self::templates();

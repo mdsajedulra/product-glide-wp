@@ -97,7 +97,7 @@ class PG_WhatsApp {
 		if ( ! $order || ! preg_match( '/(call\s*not\s*received|not\s*received|switched\s*off|phone\s*off|not\s*reachable|unreachable|ফোন\s*ধর(?:ে|ছে)\s*না|কল\s*ধর(?:ে|ছে)\s*না|ফোন\s*বন্ধ|রিসিভ\s*কর(?:ে|ছে)\s*না)/iu', (string) $text ) ) {
 			return;
 		}
-		if ( ! in_array( $order->get_status(), array( 'processing', 'on-hold', 'pending', 'rescheduled' ), true ) || $order->get_meta( '_pg_confirmed' ) ) {
+		if ( ! in_array( $order->get_status(), array( 'processing', 'on-hold', 'pending', 'rescheduled', 'call-later', 'unreachable' ), true ) || $order->get_meta( '_pg_confirmed' ) ) {
 			return;
 		}
 		self::send_trigger( $order, 'call_missed' );
@@ -396,7 +396,7 @@ class PG_WhatsApp {
 		if ( ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() || ! $order ) {
 			return;
 		}
-		$trigger = $to;
+		$trigger = 'printed' === $to ? 'courier_sent' : $to; // sent once per order
 		// The courier cancelled the parcel = delivery failed, not "your order is cancelled".
 		if ( 'cancelled' === $to && self::courier_failed( $order_id ) ) {
 			$trigger = 'courier_failed';

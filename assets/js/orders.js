@@ -201,7 +201,7 @@
 
 	/* ---------- Confirmation + Call list ---------- */
 
-	var OPEN_ST = ['processing', 'on-hold', 'pending'];
+	var OPEN_ST = ['processing', 'on-hold', 'pending', 'call-later', 'unreachable']; // not confirmed, not at the courier
 	function confirmBadge(o) {
 		var c = o.confirm;
 		if (!c) { return ''; }

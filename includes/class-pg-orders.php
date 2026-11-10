@@ -9,12 +9,13 @@ class PG_Orders {
 	public static function tabs() {
 		return array(
 			'all'               => __( 'All', 'product-glide' ),
-			'call'              => __( '📞 Call now', 'product-glide' ),
-			'rescheduled'       => __( "📅 Customer's date", 'product-glide' ),
-			'later'             => __( '⏳ Call later', 'product-glide' ),
-			'unreachable'       => __( '❌ Not reachable', 'product-glide' ),
 			'processing'        => __( 'Processing', 'product-glide' ),
-			'courier_sent'      => __( 'Courier Sent', 'product-glide' ),
+			'confirmed'         => __( '✓ Confirmed', 'product-glide' ),
+			'rescheduled'       => __( "📅 Customer's date", 'product-glide' ),
+			'call-later'        => __( '⏳ Call later', 'product-glide' ),
+			'unreachable'       => __( '❌ Not reachable', 'product-glide' ),
+			'courier_sent'      => __( '🖨 Ready to print', 'product-glide' ),
+			'printed'           => __( '✅ Printed', 'product-glide' ),
 			'courier_pending'   => __( 'Courier Pending', 'product-glide' ),
 			'completed'         => __( 'Delivered', 'product-glide' ),
 			'partial_delivered' => __( 'Partial', 'product-glide' ),
@@ -224,10 +225,6 @@ class PG_Orders {
 			$total                    += $n;
 		}
 		$counts['all']  = $total;
-		$cc                    = PG_Confirm::counts();
-		$counts['call']        = isset( $cc['call'] ) ? (int) $cc['call'] : 0;
-		$counts['later']       = isset( $cc['later'] ) ? (int) $cc['later'] : 0;
-		$counts['unreachable'] = isset( $cc['unreachable'] ) ? (int) $cc['unreachable'] : 0;
 		return $counts;
 	}
 

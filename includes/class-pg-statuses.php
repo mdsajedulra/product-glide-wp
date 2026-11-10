@@ -22,7 +22,11 @@ class PG_Statuses {
 			'wc-courier_pending'   => array( __( 'Courier Pending', 'product-glide' ), '#d97706', '' ),
 			'wc-partial_delivered' => array( __( 'Partial Delivered', 'product-glide' ), '#7c3aed', '' ),
 			'wc-payment_pending'   => array( __( 'Payment Pending', 'product-glide' ), '#db2777', '' ),
-			'wc-rescheduled'       => array( __( 'Rescheduled', 'product-glide' ), '#0d9488', '' ),
+			'wc-rescheduled'       => array( __( "Customer's date", 'product-glide' ), '#0d9488', '' ),
+			'wc-confirmed'         => array( __( 'Confirmed', 'product-glide' ), '#16a34a', '' ),
+			'wc-call-later'        => array( __( 'Call later', 'product-glide' ), '#ea580c', '' ),
+			'wc-unreachable'       => array( __( 'Not reachable', 'product-glide' ), '#dc2626', '' ),
+			'wc-printed'           => array( __( 'Printed', 'product-glide' ), '#4f46e5', '' ),
 		);
 		foreach ( (array) get_option( 'pg_custom_statuses', array() ) as $slug => $row ) {
 			$slug = 'wc-' . preg_replace( '/^wc-/', '', sanitize_key( $slug ) );
@@ -35,6 +39,9 @@ class PG_Statuses {
 				! empty( $row['text'] ) ? $row['text'] : '',
 			);
 		}
+		// Booked at the courier but the slip is not printed yet = "Ready to print".
+		$list['wc-courier_sent'][0] = __( 'Ready to print', 'product-glide' );
+		$list['wc-rescheduled'][0]  = __( "Customer's date", 'product-glide' );
 		return $list;
 	}
 

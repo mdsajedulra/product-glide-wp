@@ -21,13 +21,41 @@ class PG_Confirm {
 	const REPLIED = '_pg_wa_replied';
 	const RESEND  = '_pg_resend_req';
 	const TAB     = 'call';
-	const OPEN    = array( 'processing', 'on-hold', 'pending' );
+	const WORK    = array( 'processing', 'on-hold', 'pending' );              // needs someone now
+	const OPEN    = array( 'processing', 'on-hold', 'pending', 'confirmed', 'call-later', 'unreachable' ); // not at the courier yet
 
 	public static function init() {
 		add_action( 'wp_ajax_pg_confirm_set', array( __CLASS__, 'ajax_set' ) );
 		add_action( 'wp_ajax_pg_call_outcome', array( __CLASS__, 'ajax_call' ) );
 		add_action( 'pg_wa_incoming', array( __CLASS__, 'on_wa' ), 10, 3 );
 		add_action( 'woocommerce_order_status_changed', array( __CLASS__, 'flush' ) );
+		add_action( 'pg_call_cron', array( __CLASS__, 'cron' ) );
+		if ( ! wp_next_scheduled( 'pg_call_cron' ) ) {
+			wp_schedule_event( time() + 300, 'pg_quarter_hour', 'pg_call_cron' );
+		}
+	}
+
+	/** Move an order between the work lists without counting it as a staff status change. */
+	public static function move( WC_Order $o, $to, $note = '' ) {
+		if ( $o->get_status() === $to ) {
+			return;
+		}
+		PG_Team::$quiet = true;
+		$o->update_status( $to, $note );
+		PG_Team::$quiet = false;
+		self::flush();
+	}
+
+	/** Every 15 minutes: "Call later" orders whose time has come go back to Processing. */
+	public static function cron() {
+		$ids = wc_get_orders( array( 'type' => 'shop_order', 'status' => array( 'call-later' ), 'limit' => 200, 'return' => 'ids' ) );
+		foreach ( $ids as $id ) {
+			$o    = wc_get_order( $id );
+			$next = $o ? (int) $o->get_meta( self::NEXT ) : 0;
+			if ( $o && $next <= time() ) {
+				self::move( $o, 'processing', sprintf( 'Time to call again (call %d).', (int) $o->get_meta( self::TRIES ) + 1 ) );
+			}
+		}
 	}
 
 	public static function flush() {
@@ -150,11 +178,15 @@ class PG_Confirm {
 				$o->update_meta_data( self::CANCEL, $short );
 				$o->save_meta_data();
 				$o->add_order_note( 'Customer asked to cancel on WhatsApp: "' . $short . '" — call to check before cancelling.' );
+				self::move( $o, 'processing' );
 			} else {
 				$o->update_meta_data( self::REPLIED, time() );
 				$o->save_meta_data();
 				if ( 'later' === $kind ) {
 					$o->add_order_note( 'Customer asked on WhatsApp to send it later: "' . $short . '" — reschedule it.' );
+				}
+				if ( in_array( $o->get_status(), array( 'call-later', 'unreachable' ), true ) ) {
+					self::move( $o, 'processing', 'Customer replied on WhatsApp — read the chat.' );
 				}
 			}
 		}
@@ -177,6 +209,13 @@ class PG_Confirm {
 			PG_Team::log( $o->get_id(), 'confirmed', 'Phone call' );
 		}
 		self::flush();
+		// Out of Processing into Confirmed — unless a risky customer still needs a call.
+		if ( in_array( $o->get_status(), self::OPEN, true ) ) {
+			list( $bucket ) = self::classify_order( $o );
+			if ( 'call' === $how || 'call' !== $bucket ) {
+				self::move( $o, 'confirmed', 'call' === $how ? 'Confirmed by phone.' : 'Confirmed on WhatsApp.' );
+			}
+		}
 	}
 
 	public static function unconfirm( WC_Order $o ) {
@@ -184,6 +223,9 @@ class PG_Confirm {
 			$o->delete_meta_data( $k );
 		}
 		$o->save_meta_data();
+		if ( 'confirmed' === $o->get_status() ) {
+			self::move( $o, 'processing', 'Confirmation removed.' );
+		}
 		self::flush();
 	}
 
@@ -276,7 +318,7 @@ class PG_Confirm {
 				$o->delete_meta_data( $k );
 			}
 			$o->save_meta_data();
-			$o->add_order_note( 'Call attempts reset — back on the Call list.' );
+			self::move( $o, 'processing', 'Call attempts reset — back in Processing.' );
 			self::flush();
 			return;
 		}
@@ -286,6 +328,7 @@ class PG_Confirm {
 		$tries = (int) $o->get_meta( self::TRIES ) + 1;
 		$max   = self::max_tries();
 		$o->update_meta_data( self::TRIES, $tries );
+		$o->delete_meta_data( self::REPLIED ); // the team has dealt with the reply
 		$o->update_meta_data( self::LAST, $outcome );
 		$o->update_meta_data( self::LASTT, time() );
 		if ( $tries < $max ) {
@@ -299,6 +342,10 @@ class PG_Confirm {
 			PG_Orders::add_staff_note( $o, $text . ' (call ' . $tries . ( $tries >= $max ? ' — not reachable, decide whether to cancel' : '' ) . ')' );
 			PG_Team::log( $o->get_id(), 'call', $text );
 			do_action( 'pg_staff_note', $o, $text ); // WhatsApp "we could not reach you" (once)
+		}
+		// Out of Processing: into "Call later" until the next try, or "Not reachable".
+		if ( in_array( $o->get_status(), self::OPEN, true ) || PG_Reschedule::STATUS === $o->get_status() ) {
+			self::move( $o, $tries < $max ? 'call-later' : 'unreachable', $tries < $max ? sprintf( 'Call again %s.', self::when_label( (int) $o->get_meta( self::NEXT ) ) ) : 'Not reachable after ' . $tries . ' calls.' );
 		}
 		self::flush();
 	}
