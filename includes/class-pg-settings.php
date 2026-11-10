@@ -22,6 +22,9 @@ class PG_Settings {
 			'items_per_slip'      => 3,
 			'invoice_footer'      => 'ধন্যবাদ! আমাদের সাথে কেনাকাটার জন্য।',
 			'pkg_delivery_charge' => 60,
+			'call_after_hours'    => 2,
+			'call_low_score'      => 50,
+			'call_high_value'     => 0,
 			'del_inside'          => 60,
 			'del_suburb'          => 120,
 			'del_outside'         => 120,
@@ -168,7 +171,7 @@ class PG_Settings {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
 		}
-		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside' ) as $k ) {
+		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 0, (float) $in[ $k ] );
 			}
@@ -474,6 +477,13 @@ class PG_Settings {
 						self::field_textarea( 'shop_address', __( 'Shop address', 'product-glide' ), $s );
 						self::field_number( 'items_per_slip', __( 'Items per printed slip (larger orders continue on the next slip)', 'product-glide' ), $s );
 						self::field_number( 'pkg_delivery_charge', __( 'Default package delivery charge (BDT)', 'product-glide' ), $s );
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Call list', 'product-glide' ) . '</h3>';
+						echo '<p class="pg-muted">' . esc_html__( 'Orders confirmed on WhatsApp skip the call. The Call list shows only the rest.', 'product-glide' ) . '</p>';
+						echo '<div class="pg-grid pg-grid-3">';
+						self::field_number( 'call_after_hours', __( 'Call if no WhatsApp reply after (hours)', 'product-glide' ), $s );
+						self::field_number( 'call_low_score', __( 'Always call if delivery score is below (%) — 0 = off', 'product-glide' ), $s );
+						self::field_number( 'call_high_value', __( 'Always call if order total is at least (৳) — 0 = off', 'product-glide' ), $s );
+						echo '</div>';
 						echo '<h3 class="pg-set-h">' . esc_html__( 'Delivery charge on new orders', 'product-glide' ) . '</h3>';
 						if ( PG_Address::bdsa() ) {
 							echo '<p class="pg-muted">' . esc_html__( 'BD Smart Address is active, so new orders use its charges (same as checkout). Change them in BD Smart Address settings.', 'product-glide' ) . ' ' . esc_html( sprintf( 'Dhaka city ৳%s · Sub-urban ৳%s · Outside Dhaka ৳%s', PG_Address::fee( 'inside' ), PG_Address::fee( 'suburb' ), PG_Address::fee( 'outside' ) ) ) . '</p>';

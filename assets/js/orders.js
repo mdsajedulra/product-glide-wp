@@ -60,7 +60,7 @@
 		var html = '';
 		Object.keys(cfg.tabs).forEach(function (k) {
 			var c = counts && counts[k] !== undefined ? counts[k] : '';
-			html += '<button type="button" class="pg-status-tab' + (k === state.status ? ' is-active' : '') + '" data-tab="' + esc(k) + '">' +
+			html += '<button type="button" class="pg-status-tab' + (k === state.status ? ' is-active' : '') + (k === 'call' ? ' pg-tab-call' + (c ? ' has-items' : '') : '') + '" data-tab="' + esc(k) + '">' +
 				esc(cfg.tabs[k]) + (c !== '' ? '<span class="c">' + c + '</span>' : '') + '</button>';
 		});
 		$tabs.innerHTML = html;
@@ -180,7 +180,8 @@
 	}
 	/* A card left its tab (e.g. rescheduled from Processing): drop it from this view. */
 	function applyCard(o) {
-		if (state.status !== 'all' && o.status !== state.status && !state.q) {
+		var leaves = state.status === 'call' ? !(o.call_why && o.call_why.length) : (state.status !== 'all' && o.status !== state.status);
+		if (leaves && !state.q) {
 			var el = $list.querySelector('.pg-order[data-id="' + o.id + '"]');
 			state.orders[o.id] = o;
 			if (el) { el.classList.add('pg-leaving'); setTimeout(function () { load(true); }, 500); }
@@ -196,6 +197,36 @@
 		var o = e.detail;
 		if (o && state.orders[o.id]) { applyCard(o); }
 	});
+
+	/* ---------- Confirmation + Call list ---------- */
+
+	var OPEN_ST = ['processing', 'on-hold', 'pending'];
+	function confirmBadge(o) {
+		var c = o.confirm;
+		if (!c) { return ''; }
+		if (c.cancel) { return '<span class="pg-cbadge is-cancel" title="' + esc('Customer wrote: ' + c.cancel) + '">✋ Wants to cancel</span>'; }
+		if (c.how === 'wa') { return '<span class="pg-cbadge is-ok" title="' + esc('Customer replied on WhatsApp' + (c.text ? ': "' + c.text + '"' : '') + ' · ' + c.when) + '">✓ WA confirmed <button type="button" data-act="unconfirm" aria-label="Undo confirmation">×</button></span>'; }
+		if (c.how === 'call') { return '<span class="pg-cbadge is-ok" title="' + esc('Confirmed by call' + (c.by ? ' — ' + c.by : '') + ' · ' + c.when) + '">✓ Confirmed' + (c.by ? ' · ' + esc(c.by.split(' ')[0]) : '') + ' <button type="button" data-act="unconfirm" aria-label="Undo confirmation">×</button></span>'; }
+		if (c.replied) { return '<span class="pg-cbadge is-info" title="Customer replied on WhatsApp — read the chat">💬 Replied ' + esc(c.replied) + '</span>'; }
+		return '';
+	}
+	function callWhyHtml(o) {
+		if (!o.call_why || !o.call_why.length) { return ''; }
+		return '<div class="pg-callwhy"><b>📞 Call needed:</b>' + o.call_why.map(function (r) {
+			return '<span class="pg-callwhy-chip is-' + esc(r[2]) + '">' + esc(r[1]) + '</span>';
+		}).join('') + '</div>';
+	}
+	function canConfirm(o) {
+		return OPEN_ST.indexOf(o.status) > -1 && !(o.confirm && o.confirm.how);
+	}
+	function setConfirm(id, el, undo) {
+		A.busy(el, true);
+		A.ajax('pg_confirm_set', { order_id: id, undo: undo ? 1 : 0 }).then(function (d) {
+			A.toast(d.message, 'ok');
+			applyCard(d.order);
+			A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {});
+		}).catch(function (err) { A.toast(err.message, 'bad'); A.busy(el, false); });
+	}
 
 	/* ---------- Staff notes on the card ---------- */
 
@@ -262,7 +293,7 @@
 			'<div class="pg-order-top">' +
 				'<label class="pg-check"><input type="checkbox" data-act="select"' + (sel ? ' checked' : '') + ' aria-label="Select order ' + esc(o.number) + '"></label>' +
 				'<div class="pg-order-main">' +
-					'<div class="pg-order-line1"><span class="pg-order-no">#' + esc(o.number) + '</span>' + statusPill(o.status, o.status_label) + dup +
+					'<div class="pg-order-line1"><span class="pg-order-no">#' + esc(o.number) + '</span>' + statusPill(o.status, o.status_label) + confirmBadge(o) + dup +
 						'<span class="pg-order-date">' + esc(o.date) + '</span><span class="pg-order-total">' + A.money(o.total) + '</span></div>' +
 					'<div class="pg-cust"><div class="pg-cust-name">' + esc(o.name || '—') + '</div>' +
 						'<div class="pg-cust-row"><a class="pg-phone" href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' +
@@ -278,12 +309,15 @@
 					'<ul class="pg-items">' + items + (o.discount ? '<li><span class="pg-muted">Discount</span><span>-' + A.money(o.discount) + '</span></li>' : '') + (o.shipping ? '<li><span class="pg-muted">Delivery</span><span>' + A.money(o.shipping) + '</span></li>' : '') + '</ul>' +
 					(o.customer_note ? '<div class="pg-custnote"><b>Customer note</b>' + esc(o.customer_note) + '</div>' : '') +
 					staffNotesHtml(o) +
+					callWhyHtml(o) +
 					reschedHtml(o) +
 					courierHtml(o) +
 					'<div class="pg-fraud" data-fraud>' + fraudHtml(o.fraud, o) + '</div>' +
 				'</div>' +
 			'</div>' +
-			'<div class="pg-order-actions">' + sfBtn +
+			'<div class="pg-order-actions">' +
+				(canConfirm(o) ? '<button class="pg-btn pg-btn-confirm" data-act="confirm" title="Customer confirmed on the phone">✓ Confirmed</button>' : '') +
+				sfBtn +
 				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="Customer wants it later? Set a follow-up date">&#128197; Reschedule</button>' : '') +
 				'<button class="pg-btn" data-act="edit">Edit</button>' +
 				'<button class="pg-btn" data-act="more" aria-expanded="false">Notes ▾</button>' +
@@ -701,6 +735,8 @@
 			case 'edit': editOrder(id); break;
 			case 'rs-set': rsSet(id); break;
 			case 'rs-done': rsDone(id, el); break;
+			case 'confirm': setConfirm(id, el, false); break;
+			case 'unconfirm': setConfirm(id, el, true); break;
 			case 'history': history(id); break;
 			case 'sf-send': sfSend(id); break;
 			case 'sf-void': sfVoid(id, el); break;

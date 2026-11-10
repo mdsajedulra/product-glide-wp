@@ -9,6 +9,7 @@ class PG_Orders {
 	public static function tabs() {
 		return array(
 			'all'               => __( 'All', 'product-glide' ),
+			'call'              => __( '📞 Call list', 'product-glide' ),
 			'processing'        => __( 'Processing', 'product-glide' ),
 			'rescheduled'       => __( 'Rescheduled', 'product-glide' ),
 			'courier_sent'      => __( 'Courier Sent', 'product-glide' ),
@@ -119,6 +120,8 @@ class PG_Orders {
 			'next_invoice'  => PG_Steadfast::invoice_for( $order ),
 			'resched'       => PG_Reschedule::card( $order ),
 			'wa'            => self::wa_card( $order ),
+			'confirm'       => PG_Confirm::card( $order ),
+			'call_why'      => PG_Confirm::reasons( $order ),
 			'staff_notes'   => self::staff_notes( $order->get_id() ),
 			'dup'           => null,
 		);
@@ -216,7 +219,8 @@ class PG_Orders {
 			$counts[ substr( $st, 3 ) ] = $n;
 			$total                    += $n;
 		}
-		$counts['all'] = $total;
+		$counts['all']  = $total;
+		$counts['call'] = PG_Confirm::count();
 		return $counts;
 	}
 
@@ -235,6 +239,9 @@ class PG_Orders {
 			array_keys( wc_get_order_statuses() )
 		);
 		$status_arg = ( 'all' === $status || ! in_array( $status, $valid, true ) ) ? $valid : array( $status );
+		if ( PG_Confirm::TAB === $status ) {
+			$status_arg = PG_Confirm::OPEN;
+		}
 
 		if ( '' !== $q ) {
 			$ids   = self::search_ids( $q );
@@ -253,6 +260,11 @@ class PG_Orders {
 			);
 			$total  = count( $found );
 			$orders = array_slice( $found, ( $page - 1 ) * $per_page, $per_page );
+		} elseif ( PG_Confirm::TAB === $status ) {
+			// Only the orders someone needs to call, most urgent first.
+			$all    = PG_Confirm::ids();
+			$total  = count( $all );
+			$orders = array_filter( array_map( 'wc_get_order', array_slice( $all, ( $page - 1 ) * $per_page, $per_page ) ) );
 		} elseif ( PG_Reschedule::STATUS === $status ) {
 			// Soonest follow-up first.
 			$all    = PG_Reschedule::ids();

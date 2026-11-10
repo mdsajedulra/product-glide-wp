@@ -741,7 +741,7 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 /* ---------- WhatsApp: order card ---------- */
 .pg-wachip { border-color: #86efac !important; color: #166534 !important; }
 .pg-wachip.has-new { background: #16a34a !important; color: #fff !important; border-color: #16a34a !important; }
-.pg-wachip b { font-weight: 700; }
+.pg-wachip b { font-weight: 700; margin-left: 4px; }
 .pg-wastate { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: #f1f5f9; color: #475569; white-space: nowrap; }
 .pg-wastate.is-ok { background: #ecfdf5; color: #047857; }
 .pg-wastate.is-read { background: #e0f2fe; color: #0369a1; }
@@ -863,3 +863,20 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 .pg-wa-q-preview pre { white-space: pre-wrap; font: 14px/1.5 var(--pg-font); background: #d9fdd3; padding: 10px 12px; border-radius: 10px; max-width: 460px; }
 .pg-wa-adv { margin-bottom: 8px; }
 .pg-wa-adv[open] > summary { margin-bottom: 12px; }
+
+/* ---------- Confirmation + Call list ---------- */
+.pg-cbadge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pg-cbadge.is-ok { background: #dcfce7; color: #166534; }
+.pg-cbadge.is-cancel { background: #dc2626; color: #fff; }
+.pg-cbadge.is-info { background: #e0f2fe; color: #075985; }
+.pg-cbadge button { border: 0; background: transparent; color: inherit; opacity: .55; cursor: pointer; padding: 0 0 0 2px; font-size: 14px; line-height: 1; }
+.pg-cbadge button:hover { opacity: 1; }
+.pg-callwhy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 4px; padding: 8px 10px; border-radius: 10px; background: #fff7ed; border: 1px solid #fed7aa; font-size: 13px; }
+.pg-callwhy b { color: #9a3412; margin-right: 2px; }
+.pg-callwhy-chip { padding: 2px 9px; border-radius: 999px; background: #fff; border: 1px solid #fdba74; color: #9a3412; font-weight: 600; font-size: 12px; }
+.pg-callwhy-chip.is-bad { border-color: #fca5a5; color: #b91c1c; background: #fef2f2; }
+.pg-callwhy-chip.is-info { border-color: #bae6fd; color: #075985; background: #f0f9ff; }
+.pg-btn.pg-btn-confirm { background: #16a34a; border-color: #16a34a; color: #fff; }
+.pg-btn.pg-btn-confirm:hover { background: #15803d; border-color: #15803d; }
+.pg-status-tab.pg-tab-call.has-items:not(.is-active) { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+.pg-status-tab.pg-tab-call.has-items .c { background: #ea580c; color: #fff; }

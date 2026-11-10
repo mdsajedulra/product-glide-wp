@@ -238,7 +238,7 @@ class PG_WA_Setup {
 	public static function template_text() {
 		$brand = trim( (string) PG_Settings::get( 'brand_name', '' ) );
 		$brand = '' !== $brand ? $brand : get_bloginfo( 'name' );
-		return "আসসালামু আলাইকুম {{1}},\n" . $brand . " থেকে অর্ডার করার জন্য ধন্যবাদ।\n\nআপনার অর্ডার নম্বর: #{{2}}\nমোট: {{3}}\n\nঅর্ডারটি কনফার্ম করতে এই মেসেজের রিপ্লাই দিন। ঠিকানা বা অর্ডারে কিছু বদলাতে চাইলে এখানেই জানান।";
+		return "আসসালামু আলাইকুম {{1}},\n" . $brand . " থেকে অর্ডার করার জন্য ধন্যবাদ।\n\nআপনার অর্ডার নম্বর: #{{2}}\nমোট: {{3}}\n\nঅর্ডারটি কনফার্ম করতে নিচের বাটনে চাপুন বা \"জি\" লিখে রিপ্লাই দিন। ঠিকানা বা অর্ডারে কিছু বদলাতে চাইলে এখানেই জানান।";
 	}
 
 	public static function ajax_make_tpl() {
@@ -260,6 +260,13 @@ class PG_WA_Setup {
 						'type'    => 'BODY',
 						'text'    => $text,
 						'example' => array( 'body_text' => array( array( 'রহিম', '1234', '৯৫০ টাকা' ) ) ),
+					),
+					array(
+						'type'    => 'BUTTONS',
+						'buttons' => array(
+							array( 'type' => 'QUICK_REPLY', 'text' => 'কনফার্ম করছি' ),
+							array( 'type' => 'QUICK_REPLY', 'text' => 'বাতিল করতে চাই' ),
+						),
 					),
 				),
 			)

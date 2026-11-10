@@ -319,7 +319,7 @@ class PG_WA_Inbox {
 				$body = '[' . $type . ' message — open WhatsApp Manager to view]';
 		}
 		$key = self::key( $from );
-		self::log(
+		$new = self::log(
 			array(
 				'wa_mid'     => isset( $m['id'] ) ? $m['id'] : '',
 				'phone'      => $key,
@@ -334,6 +334,9 @@ class PG_WA_Inbox {
 				'name'       => isset( $names[ $from ] ) ? $names[ $from ] : '',
 			)
 		);
+		if ( $new && 'reaction' !== $type ) {
+			do_action( 'pg_wa_incoming', $key, $type, $body );
+		}
 	}
 
 	private static function status( array $s ) {
