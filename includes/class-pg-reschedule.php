@@ -32,9 +32,9 @@ class PG_Reschedule {
 			array(
 				'Customer is out of town',
 				'Cannot receive right now',
-				'Will decide later',
 				'Will pay after salary',
-				'Asked to call again',
+				'Wants it on a specific day',
+				'Will collect the money first',
 			)
 		);
 	}

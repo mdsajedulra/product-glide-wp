@@ -9,9 +9,11 @@ class PG_Orders {
 	public static function tabs() {
 		return array(
 			'all'               => __( 'All', 'product-glide' ),
-			'call'              => __( '📞 Call list', 'product-glide' ),
+			'call'              => __( '📞 Call now', 'product-glide' ),
+			'rescheduled'       => __( "📅 Customer's date", 'product-glide' ),
+			'later'             => __( '⏳ Call later', 'product-glide' ),
+			'unreachable'       => __( '❌ Not reachable', 'product-glide' ),
 			'processing'        => __( 'Processing', 'product-glide' ),
-			'rescheduled'       => __( 'Rescheduled', 'product-glide' ),
 			'courier_sent'      => __( 'Courier Sent', 'product-glide' ),
 			'courier_pending'   => __( 'Courier Pending', 'product-glide' ),
 			'completed'         => __( 'Delivered', 'product-glide' ),
@@ -122,6 +124,8 @@ class PG_Orders {
 			'wa'            => self::wa_card( $order ),
 			'confirm'       => PG_Confirm::card( $order ),
 			'call_why'      => PG_Confirm::reasons( $order ),
+			'call_bucket'   => PG_Confirm::bucket( $order ),
+			'calls'         => PG_Confirm::calls_card( $order ),
 			'staff_notes'   => self::staff_notes( $order->get_id() ),
 			'dup'           => null,
 		);
@@ -220,7 +224,10 @@ class PG_Orders {
 			$total                    += $n;
 		}
 		$counts['all']  = $total;
-		$counts['call'] = PG_Confirm::count();
+		$cc                    = PG_Confirm::counts();
+		$counts['call']        = isset( $cc['call'] ) ? (int) $cc['call'] : 0;
+		$counts['later']       = isset( $cc['later'] ) ? (int) $cc['later'] : 0;
+		$counts['unreachable'] = isset( $cc['unreachable'] ) ? (int) $cc['unreachable'] : 0;
 		return $counts;
 	}
 
@@ -239,7 +246,7 @@ class PG_Orders {
 			array_keys( wc_get_order_statuses() )
 		);
 		$status_arg = ( 'all' === $status || ! in_array( $status, $valid, true ) ) ? $valid : array( $status );
-		if ( PG_Confirm::TAB === $status ) {
+		if ( in_array( $status, array( 'call', 'later', 'unreachable' ), true ) ) {
 			$status_arg = PG_Confirm::OPEN;
 		}
 
@@ -260,9 +267,9 @@ class PG_Orders {
 			);
 			$total  = count( $found );
 			$orders = array_slice( $found, ( $page - 1 ) * $per_page, $per_page );
-		} elseif ( PG_Confirm::TAB === $status ) {
+		} elseif ( in_array( $status, array( 'call', 'later', 'unreachable' ), true ) && '' === $q ) {
 			// Only the orders someone needs to call, most urgent first.
-			$all    = PG_Confirm::ids();
+			$all    = PG_Confirm::ids( $status );
 			$total  = count( $all );
 			$orders = array_filter( array_map( 'wc_get_order', array_slice( $all, ( $page - 1 ) * $per_page, $per_page ) ) );
 		} elseif ( PG_Reschedule::STATUS === $status ) {
@@ -459,6 +466,10 @@ class PG_Orders {
 		$is_customer = (bool) PG_Helpers::post_int( 'customer' );
 		self::add_staff_note( $order, $text, $is_customer );
 		PG_Team::log( $order->get_id(), 'note', $text );
+		$outcome = PG_Confirm::outcome_from_text( $text );
+		if ( $outcome && in_array( $order->get_status(), PG_Confirm::OPEN, true ) && ! $order->get_meta( PG_Confirm::HOW ) ) {
+			PG_Confirm::log_call( $order, $outcome, false ); // a typed "Call not received" counts as a call attempt
+		}
 		do_action( 'pg_staff_note', $order, $text );
 		wp_send_json_success( array( 'notes' => self::notes_data( $order->get_id() ) ) );
 	}

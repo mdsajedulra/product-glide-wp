@@ -25,6 +25,7 @@ class PG_Confirm {
 
 	public static function init() {
 		add_action( 'wp_ajax_pg_confirm_set', array( __CLASS__, 'ajax_set' ) );
+		add_action( 'wp_ajax_pg_call_outcome', array( __CLASS__, 'ajax_call' ) );
 		add_action( 'pg_wa_incoming', array( __CLASS__, 'on_wa' ), 10, 3 );
 		add_action( 'woocommerce_order_status_changed', array( __CLASS__, 'flush' ) );
 	}
@@ -215,60 +216,225 @@ class PG_Confirm {
 		return is_numeric( $v ) ? (float) $v : $def;
 	}
 
+	/* ------------------------------------------------------------------ */
+	/* Call attempts                                                       */
+	/* ------------------------------------------------------------------ */
+
+	const TRIES = '_pg_call_tries';
+	const NEXT  = '_pg_call_next';  // UTC timestamp of the next try
+	const LAST  = '_pg_call_last';  // noans | off | busy
+	const LASTT = '_pg_call_last_at';
+
+	/** A typed note like "Call not received" / "ফোন বন্ধ" → which call outcome it means ('' = none). */
+	public static function outcome_from_text( $text ) {
+		$t = mb_strtolower( (string) $text );
+		if ( preg_match( '/(switched\s*off|phone\s*off|ফোন\s*বন্ধ|বন্ধ\s*পাওয়া)/u', $t ) ) {
+			return 'off';
+		}
+		if ( preg_match( '/(busy|ব্যস্ত|ওয়েটিং|waiting)/u', $t ) ) {
+			return 'busy';
+		}
+		if ( preg_match( '/(call\s*not\s*received|not\s*received|no\s*answer|not\s*reachable|ফোন\s*ধর(?:ে|ছে)\s*না|কল\s*ধর(?:ে|ছে)\s*না|রিসিভ\s*কর(?:ে|ছে)\s*না)/u', $t ) ) {
+			return 'noans';
+		}
+		return '';
+	}
+
+	public static function outcomes() {
+		return array(
+			'noans' => array( 'Call not received', 'No answer' ),
+			'off'   => array( 'Phone switched off', 'Switched off' ),
+			'busy'  => array( 'Phone busy', 'Busy' ),
+		);
+	}
+
+	public static function max_tries() {
+		return max( 1, (int) self::setting( 'call_max_tries', 3 ) );
+	}
+
+	/** Next try: N hours later, moved to 10 AM if that falls at night (Bangladesh time). */
+	private static function next_try_time() {
+		$ts = time() + (int) ( max( 0.5, self::setting( 'call_retry_hours', 3 ) ) * HOUR_IN_SECONDS );
+		$tz = PG_Helpers::tz();
+		$dt = new DateTime( '@' . $ts );
+		$dt->setTimezone( $tz );
+		$h = (int) $dt->format( 'G' );
+		if ( $h >= 21 ) {
+			$dt->modify( '+1 day' );
+			$dt->setTime( 10, 0 );
+		} elseif ( $h < 9 ) {
+			$dt->setTime( 10, 0 );
+		}
+		return $dt->getTimestamp();
+	}
+
+	/** Staff tried to call: count it, note it, and hide the order until the next try. */
+	public static function log_call( WC_Order $o, $outcome, $with_note = true ) {
+		$outs = self::outcomes();
+		if ( 'reset' === $outcome ) {
+			foreach ( array( self::TRIES, self::NEXT, self::LAST, self::LASTT ) as $k ) {
+				$o->delete_meta_data( $k );
+			}
+			$o->save_meta_data();
+			$o->add_order_note( 'Call attempts reset — back on the Call list.' );
+			self::flush();
+			return;
+		}
+		if ( ! isset( $outs[ $outcome ] ) ) {
+			return;
+		}
+		$tries = (int) $o->get_meta( self::TRIES ) + 1;
+		$max   = self::max_tries();
+		$o->update_meta_data( self::TRIES, $tries );
+		$o->update_meta_data( self::LAST, $outcome );
+		$o->update_meta_data( self::LASTT, time() );
+		if ( $tries < $max ) {
+			$o->update_meta_data( self::NEXT, self::next_try_time() );
+		} else {
+			$o->delete_meta_data( self::NEXT );
+		}
+		$o->save_meta_data();
+		$text = $outs[ $outcome ][0];
+		if ( $with_note ) {
+			PG_Orders::add_staff_note( $o, $text . ' (call ' . $tries . ( $tries >= $max ? ' — not reachable, decide whether to cancel' : '' ) . ')' );
+			PG_Team::log( $o->get_id(), 'call', $text );
+			do_action( 'pg_staff_note', $o, $text ); // WhatsApp "we could not reach you" (once)
+		}
+		self::flush();
+	}
+
+	public static function calls_card( WC_Order $o ) {
+		$tries = (int) $o->get_meta( self::TRIES );
+		if ( ! $tries ) {
+			return null;
+		}
+		$outs = self::outcomes();
+		$last = (string) $o->get_meta( self::LAST );
+		$next = (int) $o->get_meta( self::NEXT );
+		$lt   = (int) $o->get_meta( self::LASTT );
+		return array(
+			'tries' => $tries,
+			'max'   => self::max_tries(),
+			'last'  => isset( $outs[ $last ] ) ? $outs[ $last ][1] : '',
+			'at'    => $lt ? PG_Helpers::bd_time( $lt, 'h:i A' ) : '',
+			'next'  => $next ? self::when_label( $next ) : '',
+			'wait'  => $next > time(),
+		);
+	}
+
+	private static function when_label( $ts ) {
+		$today = PG_Helpers::bd_time( time(), 'Y-m-d' );
+		$d     = PG_Helpers::bd_time( $ts, 'Y-m-d' );
+		if ( $d === $today ) {
+			return PG_Helpers::bd_time( $ts, 'h:i A' );
+		}
+		return ( PG_Helpers::bd_time( time() + DAY_IN_SECONDS, 'Y-m-d' ) === $d ? 'tomorrow ' : PG_Helpers::bd_time( $ts, 'd M ' ) ) . PG_Helpers::bd_time( $ts, 'h:i A' );
+	}
+
+	private static function ordinal( $n ) {
+		$s = array( 1 => '1st', 2 => '2nd', 3 => '3rd' );
+		return isset( $s[ $n ] ) ? $s[ $n ] : $n . 'th';
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Buckets: call now / call later / not reachable                      */
+	/* ------------------------------------------------------------------ */
+
 	/**
-	 * Why this order should be called (empty = no call needed right now).
+	 * Where the order belongs and why.
+	 * Returns array( bucket, reasons ) — bucket: call | later | unreachable | '' (nothing to do).
 	 * Each reason: array( code, label, level ). $fraud: the cached score row if known.
 	 */
-	public static function reasons( WC_Order $o, $fraud = false ) {
+	public static function classify_order( WC_Order $o, $fraud = false ) {
 		$parcel = PG_Steadfast::active( $o->get_id() );
 		if ( ! in_array( $o->get_status(), self::OPEN, true ) || ( $parcel && ! in_array( $parcel->courier_status, array( 'cancelled', 'voided' ), true ) ) ) {
-			return array(); // at the courier already (a cancelled parcel does not count)
+			return array( '', array() ); // at the courier already (a cancelled parcel does not count)
 		}
 		$out    = array();
 		$how    = (string) $o->get_meta( self::HOW );
 		$cancel = (string) $o->get_meta( self::CANCEL );
+		$resend = (string) $o->get_meta( self::RESEND );
+		$tries  = (int) $o->get_meta( self::TRIES );
+		$next   = (int) $o->get_meta( self::NEXT );
 		$age_h  = $o->get_date_created() ? ( time() - $o->get_date_created()->getTimestamp() ) / HOUR_IN_SECONDS : 99;
 		$wait_h = self::setting( 'call_after_hours', 2 );
 		$wa_on  = PG_WhatsApp::configured();
 		$state  = (string) $o->get_meta( '_pg_wa_state' );
+		$bucket = '';
 
-		$resend = (string) $o->get_meta( self::RESEND );
 		if ( '' !== $resend ) {
-			$out[] = array( 'resend', 'Wants it sent again — book the courier again', 'warn' );
+			$out[]  = array( 'resend', 'Wants it sent again — book the courier again', 'warn' );
+			$bucket = 'call';
 		}
 		if ( '' !== $cancel ) {
-			$out[] = array( 'cancel', 'Asked to cancel on WhatsApp: "' . $cancel . '"', 'bad' );
+			$out[]  = array( 'cancel', 'Asked to cancel on WhatsApp: "' . $cancel . '"', 'bad' );
+			$bucket = 'call';
 		} elseif ( '' === $how && '' === $resend ) {
-			if ( ! $wa_on ) {
-				$out[] = array( 'new', 'Not confirmed yet', 'info' );
+			$outs = self::outcomes();
+			$last = (string) $o->get_meta( self::LAST );
+			$lastl = isset( $outs[ $last ] ) ? $outs[ $last ][1] : '';
+			if ( $o->get_meta( self::REPLIED ) ) {
+				$out[]  = array( 'replied', 'Replied on WhatsApp — read the chat first', 'info' );
+				$bucket = 'call';
+			} elseif ( $tries >= self::max_tries() ) {
+				$out[]  = array( 'unreachable', 'No answer after ' . $tries . ' calls (last: ' . $lastl . ') — cancel or try once more', 'bad' );
+				$bucket = 'unreachable';
+			} elseif ( $tries && $next > time() ) {
+				$out[]  = array( 'later', $lastl . ' · ' . $tries . '/' . self::max_tries() . ' calls · next try ' . self::when_label( $next ), 'info' );
+				$bucket = 'later';
+			} elseif ( $tries ) {
+				$out[]  = array( 'retry', self::ordinal( $tries + 1 ) . ' try — last time: ' . $lastl, 'warn' );
+				$bucket = 'call';
+			} elseif ( ! $wa_on ) {
+				$out[]  = array( 'new', 'Not confirmed yet', 'info' );
+				$bucket = 'call';
 			} elseif ( 'none' === $state ) {
-				$out[] = array( 'nowa', 'No WhatsApp on this number', 'bad' );
+				$out[]  = array( 'nowa', 'No WhatsApp on this number', 'bad' );
+				$bucket = 'call';
 			} elseif ( 'failed' === $state ) {
-				$out[] = array( 'wafail', 'WhatsApp message failed', 'bad' );
-			} elseif ( $o->get_meta( self::REPLIED ) ) {
-				$out[] = array( 'replied', 'Replied on WhatsApp — read the chat first', 'info' );
+				$out[]  = array( 'wafail', 'WhatsApp message failed', 'bad' );
+				$bucket = 'call';
 			} elseif ( $age_h >= $wait_h ) {
-				$label = 'read' === $state ? 'Read on WhatsApp but no reply' : ( '' === $state ? 'Not confirmed yet' : 'No WhatsApp reply' );
-				$out[] = array( 'noreply', $label . ' (' . self::ago( $age_h ) . ')', 'warn' );
+				$label  = 'read' === $state ? 'Read on WhatsApp but no reply' : ( '' === $state ? 'Not confirmed yet' : 'No WhatsApp reply' );
+				$out[]  = array( 'noreply', $label . ' (' . self::ago( $age_h ) . ')', 'warn' );
+				$bucket = 'call';
 			}
 		}
 		// Risky orders stay on the list even after a WhatsApp "yes".
-		if ( '' === $cancel && 'call' !== $how ) {
+		if ( '' === $cancel && 'call' !== $how && 'unreachable' !== $bucket ) {
 			if ( false === $fraud ) {
 				$p     = PG_Helpers::bd_phone( $o->get_billing_phone() );
 				$f     = $p ? PG_Fraud::cached_many( array( $p ) ) : array();
 				$fraud = $p && isset( $f[ $p ] ) ? $f[ $p ] : null;
 			}
-			$min = self::setting( 'call_low_score', 50 );
+			$risk = array();
+			$min  = self::setting( 'call_low_score', 50 );
 			if ( $min > 0 && is_array( $fraud ) && null !== $fraud['delivery_ratio'] && ( ! empty( $fraud['parcels'] ) || ! in_array( (string) $fraud['volume_range'], array( '', '0' ), true ) ) && $fraud['delivery_ratio'] < $min ) {
-				$out[] = array( 'score', 'Low delivery score (' . (int) $fraud['delivery_ratio'] . '%)', 'bad' );
+				$risk[] = array( 'score', 'Low delivery score (' . (int) $fraud['delivery_ratio'] . '%)', 'bad' );
 			}
 			$hv = self::setting( 'call_high_value', 0 );
 			if ( $hv > 0 && (float) $o->get_total() >= $hv ) {
-				$out[] = array( 'value', 'High-value order', 'warn' );
+				$risk[] = array( 'value', 'High-value order', 'warn' );
+			}
+			if ( $risk ) {
+				$out = array_merge( $out, $risk );
+				if ( '' === $bucket ) {
+					$bucket = 'call';
+				}
 			}
 		}
-		return $out;
+		return array( $bucket, $out );
+	}
+
+	/** Reasons shown on the card (any bucket). */
+	public static function reasons( WC_Order $o, $fraud = false ) {
+		$c = self::classify_order( $o, $fraud );
+		return $c[1];
+	}
+
+	public static function bucket( WC_Order $o ) {
+		$c = self::classify_order( $o );
+		return $c[0];
 	}
 
 	private static function ago( $h ) {
@@ -281,52 +447,79 @@ class PG_Confirm {
 		return (int) floor( $h / 24 ) . ' d';
 	}
 
-	/** Orders on the Call list, most urgent first. */
-	public static function ids() {
-		static $ids = null;
-		if ( null !== $ids ) {
-			return $ids;
+	/** All open orders sorted into the three lists (computed once per request). */
+	public static function lists() {
+		static $lists = null;
+		if ( null !== $lists ) {
+			return $lists;
 		}
-		$cand = wc_get_orders(
+		$cand  = wc_get_orders(
 			array(
 				'type'         => 'shop_order',
 				'status'       => self::OPEN,
 				'limit'        => 400,
 				'orderby'      => 'date',
 				'order'        => 'ASC',
-				'date_created' => '>' . ( time() - 14 * DAY_IN_SECONDS ),
+				'date_created' => '>' . ( time() - 21 * DAY_IN_SECONDS ),
 				'return'       => 'ids',
 			)
 		);
-		$rank = array( 'cancel' => 0, 'resend' => 1, 'nowa' => 1, 'wafail' => 1, 'score' => 2, 'noreply' => 3, 'new' => 3, 'value' => 4, 'replied' => 5 );
-		$rows = array();
+		$rank  = array( 'cancel' => 0, 'resend' => 1, 'replied' => 1, 'nowa' => 2, 'wafail' => 2, 'score' => 3, 'retry' => 4, 'noreply' => 5, 'new' => 5, 'value' => 6 );
+		$rows  = array( 'call' => array(), 'later' => array(), 'unreachable' => array() );
 		foreach ( $cand as $i => $id ) {
 			$o = wc_get_order( $id );
-			$r = $o ? self::reasons( $o ) : array();
-			if ( $r ) {
-				$best   = min( array_map( function ( $x ) use ( $rank ) { return isset( $rank[ $x[0] ] ) ? $rank[ $x[0] ] : 9; }, $r ) );
-				$rows[] = array( $id, $best, $i );
+			if ( ! $o ) {
+				continue;
 			}
+			list( $b, $r ) = self::classify_order( $o );
+			if ( ! $b ) {
+				continue;
+			}
+			$key = $i;
+			if ( 'call' === $b ) {
+				$key = min( array_map( function ( $x ) use ( $rank ) { return isset( $rank[ $x[0] ] ) ? $rank[ $x[0] ] : 9; }, $r ) ) * 100000 + $i;
+			} elseif ( 'later' === $b ) {
+				$key = (int) $o->get_meta( self::NEXT );
+			}
+			$rows[ $b ][] = array( $id, $key );
 		}
-		usort(
-			$rows,
-			function ( $a, $b ) {
-				return $a[1] === $b[1] ? $a[2] - $b[2] : $a[1] - $b[1];
-			}
-		);
-		$ids = array_map(
-			function ( $r ) {
-				return (int) $r[0];
-			},
-			$rows
-		);
-		set_transient( 'pg_call_n', count( $ids ), 120 );
-		return $ids;
+		$lists = array();
+		foreach ( $rows as $b => $list ) {
+			usort( $list, function ( $x, $y ) { return $x[1] <=> $y[1]; } );
+			$lists[ $b ] = array_map( function ( $r ) { return (int) $r[0]; }, $list );
+		}
+		set_transient( 'pg_call_n', array_map( 'count', $lists ), 120 );
+		return $lists;
+	}
+
+	/** Call list ids (bucket "call" by default). */
+	public static function ids( $bucket = 'call' ) {
+		$l = self::lists();
+		return isset( $l[ $bucket ] ) ? $l[ $bucket ] : array();
+	}
+
+	public static function counts() {
+		$n = get_transient( 'pg_call_n' );
+		return is_array( $n ) ? $n : array_map( 'count', self::lists() );
 	}
 
 	public static function count() {
-		$n = get_transient( 'pg_call_n' );
-		return false === $n ? count( self::ids() ) : (int) $n;
+		$c = self::counts();
+		return isset( $c['call'] ) ? (int) $c['call'] : 0;
+	}
+
+	public static function ajax_call() {
+		PG_Helpers::guard_ajax();
+		$o       = wc_get_order( PG_Helpers::post_int( 'order_id' ) );
+		$outcome = sanitize_key( PG_Helpers::post( 'outcome', '' ) );
+		if ( ! $o || ( 'reset' !== $outcome && ! isset( self::outcomes()[ $outcome ] ) ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid request', 'product-glide' ) ) );
+		}
+		self::log_call( $o, $outcome );
+		$o   = wc_get_order( $o->get_id() );
+		$c   = self::calls_card( $o );
+		$msg = 'reset' === $outcome ? __( 'Back on the Call list.', 'product-glide' ) : ( $c && $c['tries'] >= $c['max'] ? __( 'Not reachable — moved to the Unreachable list.', 'product-glide' ) : sprintf( /* translators: time */ __( 'Saved. Next try %s.', 'product-glide' ), $c ? $c['next'] : '' ) );
+		wp_send_json_success( array( 'message' => $msg, 'order' => PG_Orders::order_card_data( $o ) ) );
 	}
 
 	/* ------------------------------------------------------------------ */

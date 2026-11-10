@@ -320,7 +320,8 @@
 			'<div class="pg-rsd">' +
 				'<div class="pg-rsd-cust"><span class="pg-rsd-av">' + esc(initial) + '</span><div class="pg-rsd-who"><b>' + esc(o.name || 'Customer') + '</b>' +
 					'<span>#' + esc(o.number) + (phone ? ' · ' + esc(phone) : '') + (o.total ? ' · ' + money(o.total) : '') + '</span></div>' +
-					'<span class="pg-rsd-tag">Moves to Rescheduled</span></div>' +
+					'<span class="pg-rsd-tag">Customer\'s date</span></div>' +
+				'<div class="pg-rsd-hint">Use this only when the customer <b>gave you a day</b> to send it. If the customer did not pick up or the phone is off, close this and use <b>📵 No answer</b> / <b>📴 Switched off</b> on the order instead — it reminds you to call again.</div>' +
 				'<div class="pg-rsd-sec"><div class="pg-rsd-h"><span>&#9201;</span> Later today</div><div class="pg-rsd-grid">' + soonHtml + '</div></div>' +
 				'<div class="pg-rsd-sec"><div class="pg-rsd-h"><span>&#128197;</span> Another day</div><div class="pg-rsd-grid">' + daysHtml + '</div></div>' +
 				'<div class="pg-rsd-exact"><div class="pg-rsd-h"><span>&#9998;</span> Or set exact date &amp; time</div>' +

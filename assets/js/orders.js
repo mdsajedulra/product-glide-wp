@@ -180,7 +180,8 @@
 	}
 	/* A card left its tab (e.g. rescheduled from Processing): drop it from this view. */
 	function applyCard(o) {
-		var leaves = state.status === 'call' ? !(o.call_why && o.call_why.length) : (state.status !== 'all' && o.status !== state.status);
+		var buckets = ['call', 'later', 'unreachable'];
+		var leaves = buckets.indexOf(state.status) > -1 ? o.call_bucket !== state.status : (state.status !== 'all' && o.status !== state.status);
 		if (leaves && !state.q) {
 			var el = $list.querySelector('.pg-order[data-id="' + o.id + '"]');
 			state.orders[o.id] = o;
@@ -212,7 +213,8 @@
 	}
 	function callWhyHtml(o) {
 		if (!o.call_why || !o.call_why.length) { return ''; }
-		return '<div class="pg-callwhy"><b>📞 Call needed:</b>' + o.call_why.map(function (r) {
+		var head = { call: '📞 Call now:', later: '⏳ Call later:', unreachable: '❌ Not reachable:' }[o.call_bucket] || '📞 Check:';
+		return '<div class="pg-callwhy is-' + esc(o.call_bucket || 'call') + '"><b>' + head + '</b>' + o.call_why.map(function (r) {
 			return '<span class="pg-callwhy-chip is-' + esc(r[2]) + '">' + esc(r[1]) + '</span>';
 		}).join('') + '</div>';
 	}
@@ -334,9 +336,16 @@
 				'</div>' +
 			'</div>' +
 			'<div class="pg-order-actions">' +
-				(canConfirm(o) ? '<button class="pg-btn pg-btn-confirm" data-act="confirm" title="Customer confirmed on the phone">✓ Confirmed</button>' : '') +
+				(canConfirm(o) ? '<span class="pg-callbtns">' +
+					'<button class="pg-btn pg-btn-confirm" data-act="confirm" title="Customer confirmed on the phone">✓ Confirmed</button>' +
+					(o.call_bucket === 'unreachable'
+						? '<button class="pg-btn" data-act="call" data-out="reset" title="Put it back on the Call now list">↺ Try again</button>'
+						: '<button class="pg-btn pg-btn-callout" data-act="call" data-out="noans" title="Called, no answer — remind me to call again">📵 No answer</button>' +
+						  '<button class="pg-btn pg-btn-callout" data-act="call" data-out="off" title="Phone switched off — remind me to call again">📴 Off</button>' +
+						  '<button class="pg-btn pg-btn-callout" data-act="call" data-out="busy" title="Line busy — remind me to call again">⏰ Busy</button>') +
+				'</span>' : '') +
 				sfBtn +
-				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="Customer wants it later? Set a follow-up date">&#128197; Reschedule</button>' : '') +
+				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="The customer gave a day to send it">&#128197; Customer\'s date</button>' : '') +
 				'<button class="pg-btn" data-act="edit">Edit</button>' +
 				'<button class="pg-btn" data-act="more" aria-expanded="false">Notes ▾</button>' +
 				'<button class="pg-btn" data-act="jpg">Invoice JPG</button>' +
@@ -754,6 +763,14 @@
 			case 'rs-set': rsSet(id); break;
 			case 'rs-done': rsDone(id, el); break;
 			case 'confirm': setConfirm(id, el, false); break;
+			case 'call':
+				A.busy(el, true);
+				A.ajax('pg_call_outcome', { order_id: id, outcome: el.getAttribute('data-out') }).then(function (d) {
+					A.toast(d.message, 'ok');
+					applyCard(d.order);
+					A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {});
+				}).catch(function (err) { A.toast(err.message, 'bad'); A.busy(el, false); });
+				break;
 			case 'unconfirm': setConfirm(id, el, true); break;
 			case 'history': history(id); break;
 			case 'sf-send': sfSend(id); break;

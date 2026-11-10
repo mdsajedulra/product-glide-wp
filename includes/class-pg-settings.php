@@ -25,6 +25,8 @@ class PG_Settings {
 			'call_after_hours'    => 2,
 			'call_low_score'      => 50,
 			'call_high_value'     => 0,
+			'call_max_tries'      => 3,
+			'call_retry_hours'    => 3,
 			'del_inside'          => 60,
 			'del_suburb'          => 120,
 			'del_outside'         => 120,
@@ -174,7 +176,7 @@ class PG_Settings {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
 		}
-		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value', 'wa_reminder_hours' ) as $k ) {
+		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value', 'wa_reminder_hours', 'call_max_tries', 'call_retry_hours' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 0, (float) $in[ $k ] );
 			}
@@ -492,6 +494,8 @@ class PG_Settings {
 						self::field_number( 'call_after_hours', __( 'Call if no WhatsApp reply after (hours)', 'product-glide' ), $s );
 						self::field_number( 'call_low_score', __( 'Always call if delivery score is below (%) — 0 = off', 'product-glide' ), $s );
 						self::field_number( 'call_high_value', __( 'Always call if order total is at least (৳) — 0 = off', 'product-glide' ), $s );
+						self::field_number( 'call_retry_hours', __( 'After "No answer / Switched off / Busy", call again after (hours)', 'product-glide' ), $s );
+						self::field_number( 'call_max_tries', __( 'Move to "Not reachable" after this many calls', 'product-glide' ), $s );
 						echo '</div>';
 						echo '<h3 class="pg-set-h">' . esc_html__( 'Delivery charge on new orders', 'product-glide' ) . '</h3>';
 						if ( PG_Address::bdsa() ) {

@@ -21,6 +21,7 @@ class PG_Team {
 		'status'    => 'Changed status',
 		'edited'    => 'Edited order',
 		'note'      => 'Added note',
+		'call'      => 'Call attempt',
 		'printed'   => 'Printed invoice',
 	);
 
