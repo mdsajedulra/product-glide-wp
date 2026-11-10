@@ -87,6 +87,7 @@ class PG_Settings {
 			'wa_app_id'           => '',
 			'wa_pay_number'       => '',
 			'wa_reminder_hours'   => 3,
+			'wa_quick_replies'    => "আপনার অর্ডারটি কনফার্ম করা হয়েছে। খুব শিগগিরই পাঠিয়ে দেওয়া হবে।\nঅনুগ্রহ করে আপনার সম্পূর্ণ ঠিকানা লিখে দিন: বাসা/রোড, এলাকা, থানা ও জেলা।\nআপনার পার্সেলটি কুরিয়ারে পাঠানো হয়েছে। ডেলিভারিম্যান কল করলে অনুগ্রহ করে রিসিভ করবেন।\nঠিক আছে, আপনার অর্ডারটি বাতিল করে দেওয়া হলো।\nধন্যবাদ! আর কোনো প্রশ্ন থাকলে এখানেই জানাবেন।",
 			// AI / OCR (OpenRouter).
 			'or_key'              => '',
 			'or_model'            => '',
@@ -163,7 +164,7 @@ class PG_Settings {
 			$size                 = sanitize_key( $in['inv_page_size'] );
 			$new['inv_page_size'] = isset( PG_Invoice::sizes()[ $size ] ) ? $size : 'a4';
 		}
-		foreach ( array( 'shop_address', 'invoice_footer', 'inv_address', 'block_message', 'blocklist', 'block_list_message' ) as $k ) {
+		foreach ( array( 'shop_address', 'invoice_footer', 'inv_address', 'block_message', 'blocklist', 'block_list_message', 'wa_quick_replies' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = sanitize_textarea_field( $in[ $k ] );
 			}
@@ -345,6 +346,7 @@ class PG_Settings {
 						self::field_number( 'wa_reminder_hours', __( 'Send the confirmation reminder after (hours without a reply)', 'product-glide' ), $s );
 						echo '</div>';
 						echo '<p class="pg-muted">' . esc_html__( 'Automatic messages (except the new-order message) are held between 9 PM and 9 AM and go out in the morning.', 'product-glide' ) . '</p>';
+						self::field_textarea( 'wa_quick_replies', __( 'Quick replies for the inbox (one per line)', 'product-glide' ), $s );
 						echo '<details class="pg-wa-adv"><summary>' . esc_html__( 'Advanced settings (Quick connect fills these in)', 'product-glide' ) . '</summary>';
 						self::field_text( 'wa_phone_id', __( 'Phone Number ID', 'product-glide' ), $s );
 						self::field_text( 'wa_waba_id', __( 'WhatsApp Business Account ID (WABA)', 'product-glide' ), $s );

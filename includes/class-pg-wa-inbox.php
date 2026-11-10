@@ -428,7 +428,11 @@ class PG_WA_Inbox {
 
 	private static function contact_row( $c ) {
 		$ts = $c->last_at ? strtotime( $c->last_at . ' UTC' ) : 0;
+		$o = ! empty( $c->order_id ) ? wc_get_order( (int) $c->order_id ) : null;
 		return array(
+			'onum'    => $o ? $o->get_order_number() : '',
+			'oslug'   => $o ? $o->get_status() : '',
+			'ostatus' => $o ? PG_Helpers::status_label( $o->get_status() ) : '',
 			'phone'   => $c->phone,
 			'name'    => (string) $c->name,
 			'preview' => (string) $c->last_preview,
@@ -477,11 +481,19 @@ class PG_WA_Inbox {
 		} elseif ( 'open' === $filter ) {
 			$where[] = $wpdb->prepare( 'last_in_at >= %s', gmdate( 'Y-m-d H:i:s', time() - self::WINDOW ) );
 		}
-		$sql  = "SELECT * FROM {$t} WHERE " . implode( ' AND ', $where ) . ' ORDER BY last_at DESC LIMIT 200';
-		$rows = $args ? $wpdb->get_results( $wpdb->prepare( $sql, $args ) ) : $wpdb->get_results( $sql ); // phpcs:ignore
+		$per    = 40;
+		$offset = max( 0, PG_Helpers::post_int( 'offset' ) );
+		$sql    = "SELECT * FROM {$t} WHERE " . implode( ' AND ', $where ) . ' ORDER BY last_at DESC LIMIT ' . ( $per + 1 ) . ' OFFSET ' . $offset;
+		$rows   = (array) ( $args ? $wpdb->get_results( $wpdb->prepare( $sql, $args ) ) : $wpdb->get_results( $sql ) ); // phpcs:ignore
+		$more   = count( $rows ) > $per;
+		$rows   = array_slice( $rows, 0, $per );
+		$since  = gmdate( 'Y-m-d H:i:s', time() - self::WINDOW );
+		$counts = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) AS `all`, SUM(unread > 0) AS unread, SUM(last_in_at >= %s) AS `open`, SUM(has_wa = 0) AS nowa FROM {$t}", $since ), ARRAY_A ); // phpcs:ignore
 		wp_send_json_success(
 			array(
-				'contacts'  => array_map( array( __CLASS__, 'contact_row' ), (array) $rows ),
+				'more'      => $more,
+				'counts'    => array_map( 'intval', (array) $counts ),
+				'contacts'  => array_map( array( __CLASS__, 'contact_row' ), $rows ),
 				'unread'    => self::unread_total(),
 				'ready'     => PG_WhatsApp::configured(),
 				'hook'      => (bool) get_option( 'pg_wa_webhook_ok' ),
@@ -558,6 +570,26 @@ class PG_WA_Inbox {
 			$o = wc_get_order( $orders[0]['id'] );
 			$c = (object) array( 'phone' => $key, 'name' => $o ? PG_Helpers::order_name( $o ) : '', 'last_preview' => '', 'last_dir' => '', 'unread' => 0, 'has_wa' => null, 'order_id' => $orders[0]['id'], 'last_at' => null, 'last_in_at' => null );
 		}
+		// Customer summary: all orders with this number + delivery score.
+		$all_rows  = isset( $map[ $k ] ) ? $map[ $k ] : array();
+		$profile   = array( 'orders' => count( $all_rows ), 'delivered' => 0, 'cancelled' => 0, 'spent' => 0.0, 'score' => null );
+		foreach ( $all_rows as $r ) {
+			$o = wc_get_order( $r['id'] );
+			if ( ! $o ) {
+				continue;
+			}
+			if ( 'completed' === $o->get_status() ) {
+				++$profile['delivered'];
+				$profile['spent'] += (float) $o->get_total();
+			} elseif ( 'cancelled' === $o->get_status() ) {
+				++$profile['cancelled'];
+			}
+		}
+		$fr = PG_Fraud::cached_many( array( $key ) );
+		if ( isset( $fr[ $key ]['delivery_ratio'] ) && null !== $fr[ $key ]['delivery_ratio'] ) {
+			$profile['score'] = (int) $fr[ $key ]['delivery_ratio'];
+		}
+		$quick = array_values( array_filter( array_map( 'trim', explode( "\n", (string) PG_Settings::get( 'wa_quick_replies', '' ) ) ) ) );
 		$maps = array();
 		foreach ( PG_WhatsApp::mappings() as $m ) {
 			$maps[] = array( 'id' => (int) $m->id, 'name' => $m->template_name, 'trigger' => $m->trigger_status );
@@ -569,6 +601,8 @@ class PG_WA_Inbox {
 				'states'   => $states,
 				'window'   => self::window_left( $key ),
 				'orders'   => $orders,
+				'profile'  => $profile,
+				'quick'    => $quick,
 				'maps'     => $maps,
 				'unread'   => self::unread_total(),
 			)
