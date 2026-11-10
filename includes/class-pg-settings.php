@@ -81,6 +81,7 @@ class PG_Settings {
 			'wa_auto'             => 0,
 			'wa_app_secret'       => '',
 			'wa_verify_token'     => '',
+			'wa_app_id'           => '',
 			// AI / OCR (OpenRouter).
 			'or_key'              => '',
 			'or_model'            => '',
@@ -102,12 +103,18 @@ class PG_Settings {
 		);
 	}
 
+	private static $cache = null;
+
 	public static function all() {
-		static $cache = null;
-		if ( null === $cache ) {
-			$cache = wp_parse_args( (array) get_option( 'pg_settings', array() ), self::defaults() );
+		if ( null === self::$cache ) {
+			self::$cache = wp_parse_args( (array) get_option( 'pg_settings', array() ), self::defaults() );
 		}
-		return $cache;
+		return self::$cache;
+	}
+
+	/** Forget the cached settings (after saving them in the same request). */
+	public static function flush() {
+		self::$cache = null;
 	}
 
 	public static function get( $key, $default = null ) {
@@ -259,6 +266,11 @@ class PG_Settings {
 					<a class="pg-tab <?php echo $k === $tab ? 'is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( array( 'page' => 'pg-settings', 'tab' => $k ), admin_url( 'admin.php' ) ) ); ?>"><?php echo esc_html( $label ); ?></a>
 				<?php endforeach; ?>
 			</div>
+			<?php
+			if ( 'whatsapp' === $tab ) {
+				PG_WA_Setup::render();
+			}
+			?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="pg-card pg-form">
 				<input type="hidden" name="action" value="pg_save_settings">
 				<input type="hidden" name="pg_section" value="<?php echo esc_attr( $tab ); ?>">
@@ -323,6 +335,7 @@ class PG_Settings {
 						echo '<p class="pg-muted">' . esc_html__( 'Uses the Steadfast API keys from the Steadfast tab.', 'product-glide' ) . '</p>';
 						break;
 					case 'whatsapp':
+						echo '<details class="pg-wa-adv"><summary>' . esc_html__( 'Advanced settings (Quick connect fills these in)', 'product-glide' ) . '</summary>';
 						self::field_text( 'wa_phone_id', __( 'Phone Number ID', 'product-glide' ), $s );
 						self::field_text( 'wa_waba_id', __( 'WhatsApp Business Account ID (WABA)', 'product-glide' ), $s );
 						self::field_secret( 'wa_token', __( 'Access Token (permanent system-user token)', 'product-glide' ), $s );
@@ -337,6 +350,7 @@ class PG_Settings {
 						echo '<div class="pg-field"><label>' . esc_html__( 'Callback URL', 'product-glide' ) . '</label><input type="text" readonly onclick="this.select()" value="' . esc_attr( PG_WA_Inbox::webhook_url() ) . '"></div>';
 						echo '<div class="pg-field"><label>' . esc_html__( 'Verify token', 'product-glide' ) . '</label><input type="text" readonly onclick="this.select()" value="' . esc_attr( PG_WA_Inbox::verify_token() ) . '"></div>';
 						echo '<p class="pg-alert ' . ( $ok ? 'pg-alert-ok' : 'pg-alert-warn' ) . '">' . ( $ok ? esc_html( sprintf( 'Webhook verified %s. Last event: %s', PG_Helpers::bd_time( $ok, 'd M, h:i A' ), $last ? PG_Helpers::bd_time( $last, 'd M, h:i A' ) : 'none yet' ) ) : esc_html__( 'Webhook not connected yet.', 'product-glide' ) ) . '</p>';
+						echo '</details>';
 						break;
 					case 'ai':
 						self::field_secret( 'or_key', __( 'OpenRouter API Key', 'product-glide' ), $s );

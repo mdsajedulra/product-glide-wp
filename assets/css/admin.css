@@ -844,3 +844,22 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 	.pg-wa-msg { max-width: 86%; }
 	.pg-wa-head [data-unread] { display: none; }
 }
+
+/* ---------- WhatsApp quick connect ---------- */
+.pg-wa-quick { margin-bottom: 16px; border: 2px solid #bbf7d0; }
+.pg-wa-q-steps { margin: 0 0 6px; padding-left: 20px; display: grid; gap: 14px; }
+.pg-wa-q-steps li > .pg-muted { display: block; font-size: 12.5px; margin: 2px 0 6px; }
+.pg-wa-q-steps input { width: 100%; max-width: 560px; }
+.pg-wa-q-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.pg-wa-q-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13.5px; }
+.pg-wa-q-list li > span { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; font-weight: 700; background: #e2e8f0; color: #334155; }
+.pg-wa-q-list li.is-ok > span { background: #16a34a; color: #fff; }
+.pg-wa-q-list li.is-bad > span { background: #dc2626; color: #fff; }
+.pg-wa-q-list li.is-wait > span { background: #f59e0b; color: #fff; }
+.pg-wa-q-test { display: flex; gap: 8px; margin-top: 12px; max-width: 460px; }
+.pg-wa-q-test input { flex: 1; }
+.pg-wa-q-preview { margin-top: 14px; }
+.pg-wa-q-preview summary, .pg-wa-adv > summary { cursor: pointer; font-weight: 600; color: #334155; }
+.pg-wa-q-preview pre { white-space: pre-wrap; font: 14px/1.5 var(--pg-font); background: #d9fdd3; padding: 10px 12px; border-radius: 10px; max-width: 460px; }
+.pg-wa-adv { margin-bottom: 8px; }
+.pg-wa-adv[open] > summary { margin-bottom: 12px; }

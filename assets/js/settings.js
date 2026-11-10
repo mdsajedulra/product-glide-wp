@@ -16,6 +16,78 @@
 		});
 	}
 
+	/* ---------- WhatsApp quick connect ---------- */
+	var waQ = document.getElementById('pg-wa-quick');
+	if (waQ) {
+		var $go = document.getElementById('pg-wa-q-go'), $out = document.getElementById('pg-wa-q-out'), $st = document.getElementById('pg-wa-q-status'), $ch = document.getElementById('pg-wa-q-choose');
+		var line = function (ok, text) { return '<li class="' + (ok ? 'is-ok' : 'is-bad') + '"><span>' + (ok ? '✓' : '!') + '</span>' + esc(text) + '</li>'; };
+		var paintStatus = function (s) {
+			if (!s || !s.connected) { $st.innerHTML = ''; return; }
+			var tpl;
+			if (s.tpl === 'approved') { tpl = line(true, 'Template approved: ' + s.tpl_name); }
+			else if (s.tpl === 'pending' || s.tpl === 'in_review') { tpl = '<li class="is-wait"><span>…</span>Template is waiting for Meta approval (usually minutes to a few hours). This page checks again by itself.</li>'; }
+			else if (s.tpl === 'rejected') { tpl = line(false, 'Meta rejected the template' + (s.tpl_reason ? ' (' + s.tpl_reason + ')' : '') + '. Change the text and create it again.'); }
+			else { tpl = '<li class="is-todo"><span>3</span>Create the order-confirmation template <button type="button" class="pg-btn pg-btn-sm pg-btn-primary" id="pg-wa-q-tpl">Create & send for approval</button></li>'; }
+			$st.innerHTML = '<ul class="pg-wa-q-list">' +
+				line(true, 'Connected' + (s.phone ? ': ' + s.phone : '')) +
+				line(s.hook, s.hook ? 'Webhook connected (replies + no-WhatsApp detection)' : 'Webhook not connected — add the App Secret and click Reconnect') +
+				tpl +
+				line(s.auto && s.map, s.auto && s.map ? 'New-order message is ON' : 'New-order message turns on by itself when the template is approved') +
+				'</ul>' +
+				(s.map ? '<div class="pg-wa-q-test"><input type="tel" id="pg-wa-q-phone" placeholder="Your mobile, e.g. 017…"><button type="button" class="pg-btn" id="pg-wa-q-send">Send a test message</button></div>' : '');
+			var tb = document.getElementById('pg-wa-q-tpl');
+			if (tb) {
+				tb.addEventListener('click', function () {
+					A.busy(tb, true);
+					A.ajax('pg_wa_setup_make_tpl', {}).then(function (d) { A.toast(d.message, 'ok'); paintStatus(d.status); poll(); })
+						.catch(function (e) { A.toast(e.message, 'bad'); A.busy(tb, false); });
+				});
+			}
+			var sb = document.getElementById('pg-wa-q-send');
+			if (sb) {
+				sb.addEventListener('click', function () {
+					A.busy(sb, true);
+					A.ajax('pg_wa_setup_test', { phone: document.getElementById('pg-wa-q-phone').value }).then(function (d) { A.toast(d.message, 'ok'); })
+						.catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy(sb, false); });
+				});
+			}
+			if (s.tpl === 'pending' || s.tpl === 'in_review') { poll(); }
+		};
+		var timer = null;
+		var poll = function () {
+			clearTimeout(timer);
+			timer = setTimeout(function () { A.ajax('pg_wa_setup_status', {}).then(function (d) { paintStatus(d.status); }).catch(function () {}); }, 60000);
+		};
+		var connect = function (extra) {
+			A.busy($go, true);
+			$out.innerHTML = '';
+			var data = Object.assign({ token: document.getElementById('pg-wa-q-token').value.trim(), secret: document.getElementById('pg-wa-q-secret').value.trim() }, extra || {});
+			A.ajax('pg_wa_setup_connect', data).then(function (d) {
+				$out.innerHTML = (d.steps || []).map(function (x) { return line(x[0] === 'ok', x[1]); }).join('');
+				if (d.choose) {
+					$ch.innerHTML = '<div class="pg-field"><label>This account has more than one number — which one?</label><select id="pg-wa-q-num">' +
+						d.choose.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.phone + ' · ' + n.name) + '</option>'; }).join('') + '</select></div>';
+					$go.textContent = 'Use this number';
+					return;
+				}
+				$ch.innerHTML = '';
+				document.getElementById('pg-wa-q-token').value = '';
+				document.getElementById('pg-wa-q-secret').value = '';
+				paintStatus(d.status);
+				A.toast('WhatsApp connected', 'ok');
+			}).catch(function (e) {
+				$out.innerHTML = line(false, e.message);
+			}).finally(function () { A.busy($go, false); });
+		};
+		$go.addEventListener('click', function () {
+			var sel = document.getElementById('pg-wa-q-num');
+			connect(sel ? { phone_id: sel.value } : {});
+		});
+		if ($st.textContent.trim()) {
+			A.ajax('pg_wa_setup_status', {}).then(function (d) { paintStatus(d.status); }).catch(function (e) { $st.innerHTML = '<p class="pg-alert pg-alert-bad">' + esc(e.message) + '</p>'; });
+		}
+	}
+
 	/* ---------- Carrybee ---------- */
 	var cbTest = document.getElementById('pg-cb-test');
 	if (cbTest) {
