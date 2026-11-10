@@ -23,11 +23,12 @@
 		var line = function (ok, text) { return '<li class="' + (ok ? 'is-ok' : 'is-bad') + '"><span>' + (ok ? '✓' : '!') + '</span>' + esc(text) + '</li>'; };
 		var paintStatus = function (s) {
 			if (!s || !s.connected) { $st.innerHTML = ''; return; }
-			var tpl;
-			if (s.tpl === 'approved') { tpl = line(true, 'Template approved: ' + s.tpl_name); }
-			else if (s.tpl === 'pending' || s.tpl === 'in_review') { tpl = '<li class="is-wait"><span>…</span>Template is waiting for Meta approval (usually minutes to a few hours). This page checks again by itself.</li>'; }
-			else if (s.tpl === 'rejected') { tpl = line(false, 'Meta rejected the template' + (s.tpl_reason ? ' (' + s.tpl_reason + ')' : '') + '. Change the text and create it again.'); }
-			else { tpl = '<li class="is-todo"><span>3</span>Create the order-confirmation template <button type="button" class="pg-btn pg-btn-sm pg-btn-primary" id="pg-wa-q-tpl">Create & send for approval</button></li>'; }
+			var tpl = '', mk = function (label) { return ' <button type="button" class="pg-btn pg-btn-sm pg-btn-primary" id="pg-wa-q-tpl">' + label + '</button>'; };
+			if (s.tpl === 'approved') { tpl = line(true, 'Template in use: ' + s.tpl_name + (s.buttons ? ' — with Confirm / Cancel buttons' : '')); }
+			if (s.v2 === 'pending' || s.v2 === 'in_review') { tpl += '<li class="is-wait"><span>…</span>Button version is waiting for Meta approval (minutes to a few hours). The current message keeps going out; this page switches over by itself.</li>'; }
+			else if (s.v2 === 'rejected') { tpl += '<li class="is-bad"><span>!</span>Meta rejected the button version' + (s.tpl_reason ? ' (' + esc(s.tpl_reason) + ')' : '') + '.' + mk('Try again') + '</li>'; }
+			else if (s.can_upgrade && s.tpl === 'approved' && !s.buttons) { tpl += '<li class="is-todo"><span>+</span>Add "কনফার্ম করছি / বাতিল করতে চাই" buttons to the message' + mk('Create button version') + '</li>'; }
+			else if (s.can_upgrade && !s.tpl) { tpl += '<li class="is-todo"><span>3</span>Create the order-confirmation template' + mk('Create & send for approval') + '</li>'; }
 			$st.innerHTML = '<ul class="pg-wa-q-list">' +
 				line(true, 'Connected' + (s.phone ? ': ' + s.phone : '')) +
 				line(s.hook, s.hook ? 'Webhook connected (replies + no-WhatsApp detection)' : 'Webhook not connected — add the App Secret and click Reconnect') +
@@ -51,7 +52,7 @@
 						.catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy(sb, false); });
 				});
 			}
-			if (s.tpl === 'pending' || s.tpl === 'in_review') { poll(); }
+			if (s.v2 === 'pending' || s.v2 === 'in_review') { poll(); }
 		};
 		var timer = null;
 		var poll = function () {

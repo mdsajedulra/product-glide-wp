@@ -8,7 +8,8 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_WA_Setup {
 
-	const TPL = 'pg_order_confirmation';
+	const TPL      = 'pg_order_confirm_v2';          // with Confirm / Cancel quick-reply buttons
+	const OLD_TPLS = array( 'pg_order_confirmation' ); // earlier version without buttons
 
 	public static function init() {
 		foreach ( array( 'connect', 'status', 'make_tpl', 'test' ) as $a ) {
@@ -184,50 +185,56 @@ class PG_WA_Setup {
 		if ( ! is_wp_error( $n ) ) {
 			$out['phone'] = trim( ( isset( $n['display_phone_number'] ) ? $n['display_phone_number'] : '' ) . ' · ' . ( isset( $n['verified_name'] ) ? $n['verified_name'] : '' ), ' ·' );
 		}
-		// Our template (any status) — or any approved one already mapped.
+		// Our template with buttons (any status). Until it is approved, whatever is mapped keeps going out.
+		$m = PG_WhatsApp::new_order_map();
 		$t = self::g( 'GET', rawurlencode( PG_Settings::get( 'wa_waba_id' ) ) . '/message_templates?name=' . self::TPL . '&fields=name,status,language,rejected_reason', $token );
-		if ( ! is_wp_error( $t ) && ! empty( $t['data'][0] ) ) {
-			$out['tpl']      = strtolower( $t['data'][0]['status'] );
-			$out['tpl_name'] = self::TPL;
-			if ( isset( $t['data'][0]['rejected_reason'] ) && 'NONE' !== $t['data'][0]['rejected_reason'] ) {
-				$out['tpl_reason'] = $t['data'][0]['rejected_reason'];
-			}
-			// Approved → switch the new-order message on, once.
-			if ( 'approved' === $out['tpl'] && ! $out['map'] ) {
-				global $wpdb;
-				$wpdb->insert( // phpcs:ignore
-					PG_Install::table( 'wa_templates' ),
-					array(
-						'trigger_status'  => 'new_order',
-						'template_name'   => self::TPL,
-						'language'        => isset( $t['data'][0]['language'] ) ? $t['data'][0]['language'] : 'bn',
-						'variables'       => 'name,order_id,total',
-						'has_header_text' => 0,
-						'enabled'         => 1,
-					)
-				);
-				$wpdb->insert( // phpcs:ignore
-					PG_Install::table( 'wa_templates' ),
-					array(
-						'trigger_status'  => 'manual',
-						'template_name'   => self::TPL,
-						'language'        => isset( $t['data'][0]['language'] ) ? $t['data'][0]['language'] : 'bn',
-						'variables'       => 'name,order_id,total',
-						'has_header_text' => 0,
-						'enabled'         => 1,
-					)
-				);
-				self::save( array( 'wa_auto' => 1 ) );
-				delete_transient( 'pg_wa_templates' );
-				$out['map']  = true;
-				$out['auto'] = true;
-			}
-		} elseif ( $out['map'] ) {
-			$m               = PG_WhatsApp::new_order_map();
+		$v2 = ( ! is_wp_error( $t ) && ! empty( $t['data'][0] ) && self::TPL === $t['data'][0]['name'] ) ? $t['data'][0] : null;
+		if ( $v2 && 'APPROVED' === $v2['status'] ) {
+			self::use_template( self::TPL, isset( $v2['language'] ) ? $v2['language'] : 'bn' );
 			$out['tpl']      = 'approved';
-			$out['tpl_name'] = $m->template_name;
+			$out['tpl_name'] = self::TPL;
+			$out['buttons']  = true;
+			$out['map']      = true;
+			$out['auto']     = (bool) PG_Settings::get( 'wa_auto', 0 );
+		} else {
+			if ( $m ) {
+				$out['tpl']      = 'approved';
+				$out['tpl_name'] = $m->template_name;
+			}
+			if ( $v2 ) {
+				$out['v2'] = strtolower( $v2['status'] );
+				if ( isset( $v2['rejected_reason'] ) && 'NONE' !== $v2['rejected_reason'] ) {
+					$out['tpl_reason'] = $v2['rejected_reason'];
+				}
+			}
+			$out['can_upgrade'] = ! $v2 || 'REJECTED' === $v2['status'];
 		}
 		return $out;
+	}
+
+	/** Point the new-order (and manual) message at this template; keep other mappings as they are. */
+	private static function use_template( $name, $lang ) {
+		global $wpdb;
+		$t    = PG_Install::table( 'wa_templates' );
+		$done = false;
+		foreach ( PG_WhatsApp::mappings() as $row ) {
+			if ( in_array( $row->trigger_status, array( 'new_order', 'manual' ), true ) && ( $row->template_name === $name || in_array( $row->template_name, self::OLD_TPLS, true ) || 'new_order' === $row->trigger_status ) ) {
+				if ( $row->template_name !== $name ) {
+					$wpdb->update( $t, array( 'template_name' => $name, 'language' => $lang, 'variables' => 'name,order_id,total', 'has_header_text' => 0, 'enabled' => 1 ), array( 'id' => $row->id ) ); // phpcs:ignore
+				}
+				if ( 'new_order' === $row->trigger_status ) {
+					$done = true;
+				}
+			}
+		}
+		if ( ! $done ) {
+			$wpdb->insert( $t, array( 'trigger_status' => 'new_order', 'template_name' => $name, 'language' => $lang, 'variables' => 'name,order_id,total', 'has_header_text' => 0, 'enabled' => 1 ) ); // phpcs:ignore
+			if ( ! get_option( 'pg_wa_auto_set' ) ) {
+				self::save( array( 'wa_auto' => 1 ) );
+				update_option( 'pg_wa_auto_set', 1, false );
+			}
+		}
+		delete_transient( 'pg_wa_templates' );
 	}
 
 	public static function ajax_status() {
@@ -241,13 +248,12 @@ class PG_WA_Setup {
 		return "আসসালামু আলাইকুম {{1}},\n" . $brand . " থেকে অর্ডার করার জন্য ধন্যবাদ।\n\nআপনার অর্ডার নম্বর: #{{2}}\nমোট: {{3}}\n\nঅর্ডারটি কনফার্ম করতে নিচের বাটনে চাপুন বা \"জি\" লিখে রিপ্লাই দিন। ঠিকানা বা অর্ডারে কিছু বদলাতে চাইলে এখানেই জানান।";
 	}
 
-	public static function ajax_make_tpl() {
-		PG_Helpers::guard_ajax( true );
+	/** Send the order-confirmation template (with Confirm / Cancel buttons) to Meta for approval. */
+	public static function create_template() {
 		if ( ! PG_WhatsApp::configured() ) {
-			wp_send_json_error( array( 'message' => __( 'Connect WhatsApp first.', 'product-glide' ) ) );
+			return new WP_Error( 'pg_wa', __( 'Connect WhatsApp first.', 'product-glide' ) );
 		}
-		$text = self::template_text();
-		$res  = self::g(
+		return self::g(
 			'POST',
 			rawurlencode( PG_Settings::get( 'wa_waba_id' ) ) . '/message_templates',
 			PG_Settings::get( 'wa_token' ),
@@ -258,7 +264,7 @@ class PG_WA_Setup {
 				'components' => array(
 					array(
 						'type'    => 'BODY',
-						'text'    => $text,
+						'text'    => self::template_text(),
 						'example' => array( 'body_text' => array( array( 'রহিম', '1234', '৯৫০ টাকা' ) ) ),
 					),
 					array(
@@ -271,10 +277,15 @@ class PG_WA_Setup {
 				),
 			)
 		);
+	}
+
+	public static function ajax_make_tpl() {
+		PG_Helpers::guard_ajax( true );
+		$res = self::create_template();
 		if ( is_wp_error( $res ) ) {
 			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
 		}
-		wp_send_json_success( array( 'message' => __( 'Template sent to Meta for approval. It usually takes a few minutes to a few hours.', 'product-glide' ), 'status' => self::status() ) );
+		wp_send_json_success( array( 'message' => __( 'Button version sent to Meta for approval (usually minutes to a few hours). The current message keeps going out until then; after approval Product Glide switches to it by itself.', 'product-glide' ), 'status' => self::status() ) );
 	}
 
 	/** Send the template with sample values to a phone, to see it arrive and test replies. */

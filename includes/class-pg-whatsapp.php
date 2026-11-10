@@ -5,11 +5,11 @@ defined( 'ABSPATH' ) || exit;
  * Meta WhatsApp Cloud API: approved templates, status-triggered and manual sends.
  *
  * Variables available for template parameters (comma-separated, in {{1}},{{2}}… order):
- *   name, order_id, items, total, tracking
+ *   name, order_id, items, total, amount, address, phone, tracking
  */
 class PG_WhatsApp {
 
-	const VARS = array( 'name', 'order_id', 'items', 'total', 'tracking' );
+	const VARS = array( 'name', 'order_id', 'items', 'total', 'amount', 'address', 'phone', 'tracking' );
 
 	/** True while an automatic (not staff-clicked) message is being sent. */
 	private static $auto = false;
@@ -204,6 +204,9 @@ class PG_WhatsApp {
 			'order_id' => (string) $order->get_order_number(),
 			'items'    => mb_substr( PG_Helpers::items_text( $order ), 0, 900 ),
 			'total'    => wc_format_decimal( $order->get_total(), 0 ) . ' টাকা',
+			'amount'   => wc_format_decimal( $order->get_total(), 0 ), // number only, for templates that already say "টাকা"
+			'address'  => mb_substr( PG_Helpers::order_address( $order ), 0, 300 ),
+			'phone'    => (string) PG_Helpers::bd_phone( $order->get_billing_phone() ),
 			'tracking' => $c && $c->tracking_code ? $c->tracking_code : '-',
 		);
 	}
@@ -377,7 +380,7 @@ class PG_WhatsApp {
 				<h2><?php esc_html_e( 'Template mappings', 'product-glide' ); ?></h2>
 				<button type="button" class="pg-btn pg-btn-ghost" id="pg-wa-load"><?php esc_html_e( 'Load Approved Templates', 'product-glide' ); ?></button>
 			</div>
-			<p class="pg-muted"><?php esc_html_e( 'Variables (comma-separated, in {{1}}, {{2}}… order): name, order_id, items, total, tracking', 'product-glide' ); ?></p>
+			<p class="pg-muted"><?php esc_html_e( 'Variables (comma-separated, in {{1}}, {{2}}… order): name, order_id, items, total (with টাকা), amount (number only), address, phone, tracking. Use exactly as many as the template has {{…}}.', 'product-glide' ); ?></p>
 			<div id="pg-wa-rows"></div>
 			<div class="pg-form-actions">
 				<button type="button" class="pg-btn pg-btn-ghost" id="pg-wa-add">+ <?php esc_html_e( 'Add mapping', 'product-glide' ); ?></button>
