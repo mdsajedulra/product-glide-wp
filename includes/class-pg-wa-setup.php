@@ -15,6 +15,11 @@ class PG_WA_Setup {
 		foreach ( array( 'connect', 'status', 'make_tpl', 'test' ) as $a ) {
 			add_action( 'wp_ajax_pg_wa_setup_' . $a, array( __CLASS__, 'ajax_' . $a ) );
 		}
+		// While the button version waits for Meta, check every hour and switch over when approved.
+		add_action( 'pg_wa_tpl_check', array( __CLASS__, 'cron_check' ) );
+		if ( get_option( 'pg_wa_v2_pending' ) && ! wp_next_scheduled( 'pg_wa_tpl_check' ) ) {
+			wp_schedule_event( time() + 600, 'hourly', 'pg_wa_tpl_check' );
+		}
 	}
 
 	private static function g( $method, $path, $token, $body = null ) {
@@ -212,6 +217,14 @@ class PG_WA_Setup {
 		return $out;
 	}
 
+	public static function cron_check() {
+		$st = self::status();
+		if ( ! empty( $st['buttons'] ) || empty( $st['v2'] ) || 'rejected' === $st['v2'] ) {
+			delete_option( 'pg_wa_v2_pending' );
+			wp_clear_scheduled_hook( 'pg_wa_tpl_check' );
+		}
+	}
+
 	/** Point the new-order (and manual) message at this template; keep other mappings as they are. */
 	private static function use_template( $name, $lang ) {
 		global $wpdb;
@@ -282,6 +295,9 @@ class PG_WA_Setup {
 	public static function ajax_make_tpl() {
 		PG_Helpers::guard_ajax( true );
 		$res = self::create_template();
+		if ( ! is_wp_error( $res ) ) {
+			update_option( 'pg_wa_v2_pending', time(), false );
+		}
 		if ( is_wp_error( $res ) ) {
 			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
 		}
