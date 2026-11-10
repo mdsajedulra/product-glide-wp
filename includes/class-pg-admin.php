@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_Admin {
 
-	const PAGES = array( 'product-glide', 'pg-leads', 'pg-packages', 'pg-ocr', 'pg-profit', 'pg-steadfast', 'pg-team', 'pg-settings' );
+	const PAGES = array( 'product-glide', 'pg-wa', 'pg-leads', 'pg-packages', 'pg-ocr', 'pg-profit', 'pg-steadfast', 'pg-team', 'pg-settings' );
 
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
@@ -22,6 +22,8 @@ class PG_Admin {
 		add_submenu_page( 'product-glide', __( 'Orders', 'product-glide' ), __( 'Orders', 'product-glide' ) . ( $due ? ' <span class="awaiting-mod" title="' . esc_attr__( 'Rescheduled orders due', 'product-glide' ) . '">' . $due . '</span>' : '' ), $cap, 'product-glide', array( __CLASS__, 'page_orders' ) );
 		$n = PG_Leads::enabled() ? (int) PG_Leads::badge_count() : 0;
 		add_submenu_page( 'product-glide', __( 'Incomplete Orders', 'product-glide' ), __( 'Incomplete Orders', 'product-glide' ) . ( $n ? ' <span class="awaiting-mod">' . $n . '</span>' : '' ), $cap, 'pg-leads', array( __CLASS__, 'page_leads' ) );
+		$wn = PG_WhatsApp::configured() ? PG_WA_Inbox::unread_total() : 0;
+		add_submenu_page( 'product-glide', __( 'WhatsApp Inbox', 'product-glide' ), __( 'WhatsApp', 'product-glide' ) . ( $wn ? ' <span class="awaiting-mod">' . $wn . '</span>' : '' ), $cap, 'pg-wa', array( __CLASS__, 'page_wa' ) );
 		add_submenu_page( 'product-glide', __( 'Package Builder', 'product-glide' ), __( 'Package Builder', 'product-glide' ), $cap, 'pg-packages', array( __CLASS__, 'page_packages' ) );
 		add_submenu_page( 'product-glide', __( 'New Order', 'product-glide' ), __( 'New Order', 'product-glide' ), $cap, 'pg-ocr', array( __CLASS__, 'page_ocr' ) );
 		add_submenu_page( 'product-glide', __( 'Profit & Stock', 'product-glide' ), __( 'Profit & Stock', 'product-glide' ), 'manage_options', 'pg-profit', array( __CLASS__, 'page_profit' ) );
@@ -114,6 +116,7 @@ class PG_Admin {
 			'ordersUrl'   => $front ? PG_App::url() : admin_url( 'admin.php?page=product-glide' ),
 			'newOrderUrl' => $front ? PG_App::url( 'new' ) : admin_url( 'admin.php?page=pg-ocr' ),
 			'rsReasons'   => PG_Reschedule::reasons(),
+			'waInboxUrl'  => $front ? PG_App::url( 'whatsapp' ) : admin_url( 'admin.php?page=pg-wa' ),
 		);
 	}
 
@@ -157,6 +160,20 @@ class PG_Admin {
 				wp_enqueue_script( 'pg-product-picker', PG_URL . 'assets/js/product-picker.js', array( 'pg-app' ), $v, true );
 				wp_enqueue_script( 'pg-ocr', PG_URL . 'assets/js/ocr.js', array( 'pg-app', 'pg-order-form', 'pg-product-picker' ), $v, true );
 				$handles = array( 'pg-app', 'pg-order-form', 'pg-product-picker', 'pg-ocr' );
+				break;
+			case 'pg-wa':
+				wp_enqueue_script( 'pg-wa-inbox', PG_URL . 'assets/js/wa-inbox.js', array( 'pg-app' ), $v, true );
+				wp_localize_script(
+					'pg-wa-inbox',
+					'PG_WA',
+					array(
+						'ready'       => PG_WhatsApp::configured(),
+						'hook'        => (bool) get_option( 'pg_wa_webhook_ok' ),
+						'settingsUrl' => admin_url( 'admin.php?page=pg-settings&tab=whatsapp' ),
+						'mediaUrl'    => add_query_arg( array( 'action' => 'pg_wa_media', 'nonce' => wp_create_nonce( 'pg_ajax' ) ), admin_url( 'admin-ajax.php' ) ),
+					)
+				);
+				$handles = array( 'pg-app', 'pg-wa-inbox' );
 				break;
 			case 'pg-profit':
 				wp_enqueue_script( 'pg-profit', PG_URL . 'assets/js/profit.js', array( 'pg-app' ), $v, true );
@@ -232,6 +249,12 @@ class PG_Admin {
 		echo '<div class="pg-wrap" id="pg-leads">';
 		self::header( __( 'Incomplete Orders', 'product-glide' ) );
 		echo '<div id="pg-leads-root"></div></div>';
+	}
+
+	public static function page_wa() {
+		echo '<div class="pg-wrap pg-wa-wrap" id="pg-wa">';
+		self::header( __( 'WhatsApp Inbox', 'product-glide' ) );
+		echo '<div id="pg-wa-root"></div></div>';
 	}
 
 	public static function page_packages() {

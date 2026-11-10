@@ -245,6 +245,19 @@
 			return '<option value="' + esc(s) + '"' + (s === o.status ? ' selected' : '') + '>' + esc(cfg.statuses[s]) + '</option>';
 		}).join('');
 
+		function waChip(o) {
+			var w = o.wa, url = cfg.waInboxUrl + (cfg.waInboxUrl.indexOf('?') > -1 ? '&' : '?') + 'phone=' + encodeURIComponent(w.phone || phone);
+			var st = {
+				none: ['is-nowa', 'No WhatsApp', 'This number has no WhatsApp — the message could not be delivered. Call or SMS.'],
+				failed: ['is-bad', 'WA failed', 'The WhatsApp message failed. Open the chat to see why.'],
+				read: ['is-read', 'WA ✓✓ Read', 'Customer has read the WhatsApp message'],
+				delivered: ['is-ok', 'WA ✓✓', 'Delivered on WhatsApp'],
+				sent: ['', 'WA ✓', 'Sent — waiting for delivery']
+			}[w.state];
+			return '<a class="pg-chipbtn pg-wachip' + (w.unread ? ' has-new' : '') + '" href="' + esc(url) + '" title="Open WhatsApp chat">💬 Chat' + (w.unread ? ' <b>' + w.unread + ' new</b>' : '') + '</a>' +
+				(st ? '<span class="pg-wastate ' + st[0] + '" title="' + esc(st[2]) + '">' + esc(st[1]) + '</span>' : '');
+		}
+
 		return '<article class="pg-order' + (sel ? ' is-selected' : '') + '" data-id="' + o.id + '">' +
 			'<div class="pg-order-top">' +
 				'<label class="pg-check"><input type="checkbox" data-act="select"' + (sel ? ' checked' : '') + ' aria-label="Select order ' + esc(o.number) + '"></label>' +
@@ -255,7 +268,7 @@
 						'<div class="pg-cust-row"><a class="pg-phone" href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' +
 							'<a class="pg-chipbtn call" href="tel:' + esc(phone) + '" aria-label="Call">Call</a>' +
 							'<button class="pg-chipbtn" data-copy="' + esc(phone) + '">Copy</button>' +
-							(waPhone ? '<a class="pg-chipbtn" href="https://wa.me/' + esc(waPhone) + '" target="_blank" rel="noopener">WhatsApp</a>' : '') +
+							(o.wa ? waChip(o) : (waPhone ? '<a class="pg-chipbtn" href="https://wa.me/' + esc(waPhone) + '" target="_blank" rel="noopener">WhatsApp</a>' : '')) +
 							(o.alt_phone && o.alt_phone !== o.phone ? '<a class="pg-chipbtn" href="tel:' + esc(o.alt_phone) + '">Alt: ' + esc(o.alt_phone) + '</a>' : '') +
 						'</div>' +
 						'<div class="pg-cust-addr">' + esc(o.address) + ' <button class="pg-chipbtn" data-copy="' + esc(o.address) + '">Copy address</button></div>' +

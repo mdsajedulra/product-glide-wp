@@ -11,11 +11,113 @@ class PG_WhatsApp {
 
 	const VARS = array( 'name', 'order_id', 'items', 'total', 'tracking' );
 
+	/** True while an automatic (not staff-clicked) message is being sent. */
+	private static $auto = false;
+
 	public static function init() {
 		add_action( 'wp_ajax_pg_wa_templates', array( __CLASS__, 'ajax_templates' ) );
 		add_action( 'wp_ajax_pg_wa_save_map', array( __CLASS__, 'ajax_save_map' ) );
 		add_action( 'wp_ajax_pg_wa_send', array( __CLASS__, 'ajax_send' ) );
 		add_action( 'woocommerce_order_status_changed', array( __CLASS__, 'on_status' ), 20, 4 );
+		// New order → message right away (classic + block checkout, CartFlows, Product Glide's own forms).
+		add_action( 'woocommerce_checkout_order_processed', array( __CLASS__, 'on_new_order' ), 50, 1 );
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'on_new_order' ), 50, 1 );
+		add_action( 'pg_order_created', array( __CLASS__, 'on_new_order' ), 50, 1 );
+		add_action( 'pg_wa_new_order', array( __CLASS__, 'send_new_order' ), 10, 1 );
+	}
+
+	/** Public wrapper for other classes (inbox, media). */
+	public static function api( $method, $path, $body = null ) {
+		return self::call( $method, $path, $body );
+	}
+
+	public static function new_order_map() {
+		foreach ( self::mappings() as $m ) {
+			if ( $m->enabled && 'new_order' === $m->trigger_status && $m->template_name ) {
+				return $m;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Queue the "new order" message. It is sent after the checkout response has gone back to the
+	 * customer (so checkout is never slowed down), with a cron fallback a few minutes later.
+	 */
+	public static function on_new_order( $order ) {
+		$id = is_object( $order ) ? $order->get_id() : (int) $order;
+		if ( ! $id || ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() || ! self::new_order_map() ) {
+			return;
+		}
+		static $queued = array();
+		if ( isset( $queued[ $id ] ) ) {
+			return;
+		}
+		$queued[ $id ] = 1;
+		if ( ! wp_next_scheduled( 'pg_wa_new_order', array( $id ) ) ) {
+			wp_schedule_single_event( time() + 180, 'pg_wa_new_order', array( $id ) );
+		}
+		add_action(
+			'shutdown',
+			function () use ( $id ) {
+				if ( function_exists( 'fastcgi_finish_request' ) ) {
+					fastcgi_finish_request();
+				} elseif ( function_exists( 'litespeed_finish_request' ) ) {
+					litespeed_finish_request();
+				}
+				self::send_new_order( $id );
+			},
+			1
+		);
+	}
+
+	public static function send_new_order( $id ) {
+		$order = wc_get_order( $id );
+		$m     = self::new_order_map();
+		if ( ! $order || ! $m || $order->get_meta( '_pg_wa_sent_new_order' ) ) {
+			return;
+		}
+		if ( in_array( $order->get_status(), array( 'failed', 'cancelled', 'trash', 'checkout-draft' ), true ) ) {
+			return;
+		}
+		if ( 'pending' === $order->get_status() && 'cod' !== $order->get_payment_method() ) {
+			return; // online payment not finished yet
+		}
+		$order->update_meta_data( '_pg_wa_sent_new_order', time() ); // claim first so the cron fallback never sends twice
+		$order->save_meta_data();
+		self::$auto = true;
+		$res        = self::send_template( $order, $m->template_name, $m->language, $m->variables, (bool) $m->has_header_text );
+		self::$auto = false;
+		if ( is_wp_error( $res ) ) {
+			$order->update_meta_data( '_pg_wa_state', 'failed' );
+			$order->save_meta_data();
+		}
+		wp_clear_scheduled_hook( 'pg_wa_new_order', array( $id ) );
+	}
+
+	/** Template body with {{1}}… filled in, for showing in the inbox. */
+	private static function render_body( $template, $lang, $params ) {
+		$list = self::templates();
+		$body = '';
+		if ( is_array( $list ) ) {
+			foreach ( $list as $t ) {
+				if ( $t['name'] === $template && ( ! $lang || $t['language'] === $lang ) ) {
+					$body = $t['body'];
+					break;
+				}
+			}
+		}
+		if ( '' === $body ) {
+			return '[Template: ' . $template . '] ' . implode( ' · ', $params );
+		}
+		return preg_replace_callback(
+			'/\{\{\s*(\d+)\s*\}\}/',
+			function ( $mm ) use ( $params ) {
+				$i = (int) $mm[1] - 1;
+				return isset( $params[ $i ] ) ? $params[ $i ] : $mm[0];
+			},
+			$body
+		);
 	}
 
 	public static function configured() {
@@ -106,11 +208,11 @@ class PG_WhatsApp {
 		);
 	}
 
-	public static function send_template( WC_Order $order, $template, $lang, $var_keys, $header_text = false ) {
+	public static function send_template( WC_Order $order, $template, $lang, $var_keys, $header_text = false, $to_key = '' ) {
 		if ( ! self::configured() ) {
 			return new WP_Error( 'pg_wa', __( 'WhatsApp Cloud API is not configured.', 'product-glide' ) );
 		}
-		$to = PG_Helpers::bd_phone( $order->get_billing_phone() );
+		$to = $to_key ? PG_WA_Inbox::key( $to_key ) : PG_Helpers::bd_phone( $order->get_billing_phone() );
 		if ( ! $to ) {
 			return new WP_Error( 'pg_wa', __( 'Customer phone is not a valid BD mobile.', 'product-glide' ) );
 		}
@@ -140,13 +242,22 @@ class PG_WhatsApp {
 		if ( $components ) {
 			$body['template']['components'] = $components;
 		}
-		$res = self::call( 'POST', rawurlencode( PG_Settings::get( 'wa_phone_id' ) ) . '/messages', $body );
+		$body['to'] = PG_WA_Inbox::wa_to( $to );
+		$res        = self::call( 'POST', rawurlencode( PG_Settings::get( 'wa_phone_id' ) ) . '/messages', $body );
+		$texts      = wp_list_pluck( $params, 'text' );
+		$lang_code  = $body['template']['language']['code'];
 		if ( is_wp_error( $res ) ) {
 			$order->add_order_note( 'WhatsApp send failed (' . $template . '): ' . $res->get_error_message() );
+			PG_WA_Inbox::log( array( 'phone' => $to, 'type' => 'template', 'template' => $template, 'body' => self::render_body( $template, $lang_code, $texts ), 'status' => 'failed', 'error' => $res->get_error_message(), 'order_id' => $order->get_id(), 'user_id' => self::$auto ? 0 : get_current_user_id() ) );
 			return $res;
 		}
 		$mid = isset( $res['messages'][0]['id'] ) ? $res['messages'][0]['id'] : '';
 		$order->add_order_note( sprintf( 'WhatsApp template "%s" sent to %s. %s', $template, $to, $mid ) );
+		PG_WA_Inbox::log( array( 'wa_mid' => $mid, 'phone' => $to, 'type' => 'template', 'template' => $template, 'body' => self::render_body( $template, $lang_code, $texts ), 'order_id' => $order->get_id(), 'user_id' => self::$auto ? 0 : get_current_user_id() ) );
+		if ( '' === (string) $order->get_meta( '_pg_wa_state' ) || 'failed' === $order->get_meta( '_pg_wa_state' ) ) {
+			$order->update_meta_data( '_pg_wa_state', 'sent' );
+			$order->save_meta_data();
+		}
 		return $res;
 	}
 
@@ -160,7 +271,9 @@ class PG_WhatsApp {
 				if ( $order->get_meta( $key ) ) {
 					continue; // Never message the same customer twice for the same status.
 				}
-				$res = self::send_template( $order, $m->template_name, $m->language, $m->variables, (bool) $m->has_header_text );
+				self::$auto = true;
+				$res        = self::send_template( $order, $m->template_name, $m->language, $m->variables, (bool) $m->has_header_text );
+				self::$auto = false;
 				if ( ! is_wp_error( $res ) ) {
 					$order->update_meta_data( $key, time() );
 					$order->save_meta_data();
@@ -191,6 +304,7 @@ class PG_WhatsApp {
 			},
 			array_keys( wc_get_order_statuses() )
 		);
+		$valid[] = 'new_order';
 		$wpdb->query( "DELETE FROM {$t}" ); // phpcs:ignore
 		foreach ( $rows as $r ) {
 			$status = sanitize_key( isset( $r['trigger_status'] ) ? $r['trigger_status'] : '' );
@@ -250,7 +364,10 @@ class PG_WhatsApp {
 	/** Mapping editor shown under Settings → WhatsApp. */
 	public static function render_mapping_ui() {
 		$rows     = self::mappings();
-		$statuses = array( 'manual' => __( 'Manual button only', 'product-glide' ) );
+		$statuses = array(
+			'manual'    => __( 'Manual button only', 'product-glide' ),
+			'new_order' => __( 'New order (right after it is placed)', 'product-glide' ),
+		);
 		foreach ( wc_get_order_statuses() as $k => $l ) {
 			$statuses[ substr( $k, 3 ) ] = $l;
 		}

@@ -15,6 +15,7 @@ class PG_App {
 	public static function views() {
 		$views = array(
 			'orders'   => array( 'product-glide', __( 'Orders', 'product-glide' ) ),
+			'whatsapp' => array( 'pg-wa', __( 'WhatsApp', 'product-glide' ) . ( PG_WhatsApp::configured() && PG_WA_Inbox::unread_total() ? ' (' . PG_WA_Inbox::unread_total() . ')' : '' ) ),
 			'incomplete' => array( 'pg-leads', __( 'Incomplete', 'product-glide' ) ),
 			'new'      => array( 'pg-ocr', __( 'New Order', 'product-glide' ) ),
 			'packages' => array( 'pg-packages', __( 'Packages', 'product-glide' ) ),
@@ -297,6 +298,9 @@ class PG_App {
 				break;
 			case 'pg-leads':
 				PG_Admin::page_leads();
+				break;
+			case 'pg-wa':
+				PG_Admin::page_wa();
 				break;
 			case 'pg-packages':
 				PG_Admin::page_packages();

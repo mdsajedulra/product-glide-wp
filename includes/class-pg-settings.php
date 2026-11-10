@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_Settings {
 
-	const SECRET_KEYS = array( 'sf_api_key', 'sf_secret_key', 'wa_token', 'or_key', 'cb_client_secret', 'cb_client_context' );
+	const SECRET_KEYS = array( 'sf_api_key', 'sf_secret_key', 'wa_token', 'wa_app_secret', 'or_key', 'cb_client_secret', 'cb_client_context' );
 
 	public static function init() {
 		add_action( 'admin_post_pg_save_settings', array( __CLASS__, 'save' ) );
@@ -79,6 +79,8 @@ class PG_Settings {
 			'wa_lang'             => 'bn',
 			'wa_api_version'      => 'v21.0',
 			'wa_auto'             => 0,
+			'wa_app_secret'       => '',
+			'wa_verify_token'     => '',
 			// AI / OCR (OpenRouter).
 			'or_key'              => '',
 			'or_model'            => '',
@@ -326,7 +328,15 @@ class PG_Settings {
 						self::field_secret( 'wa_token', __( 'Access Token (permanent system-user token)', 'product-glide' ), $s );
 						self::field_select( 'wa_lang', __( 'Default language', 'product-glide' ), $s, array( 'bn' => 'Bangla (bn)', 'en' => 'English (en)', 'en_US' => 'English US (en_US)' ) );
 						self::field_text( 'wa_api_version', __( 'Graph API version', 'product-glide' ), $s );
-						self::field_check( 'wa_auto', __( 'Send automatic messages on status change (uses the mappings below)', 'product-glide' ), $s );
+						self::field_secret( 'wa_app_secret', __( 'App Secret (Meta app → App settings → Basic). Checks that webhook calls really come from Meta.', 'product-glide' ), $s );
+						self::field_check( 'wa_auto', __( 'Send automatic messages: on a new order and on status changes (uses the mappings below)', 'product-glide' ), $s );
+						$ok   = (int) get_option( 'pg_wa_webhook_ok', 0 );
+						$last = (int) get_option( 'pg_wa_last_event', 0 );
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Inbox webhook (replies + "no WhatsApp" detection)', 'product-glide' ) . '</h3>';
+						echo '<p class="pg-muted">' . esc_html__( 'Meta app → WhatsApp → Configuration → Webhook: paste these two, click "Verify and save", then subscribe to the "messages" field. Without this, customer replies and delivery / no-WhatsApp status cannot reach Product Glide.', 'product-glide' ) . '</p>';
+						echo '<div class="pg-field"><label>' . esc_html__( 'Callback URL', 'product-glide' ) . '</label><input type="text" readonly onclick="this.select()" value="' . esc_attr( PG_WA_Inbox::webhook_url() ) . '"></div>';
+						echo '<div class="pg-field"><label>' . esc_html__( 'Verify token', 'product-glide' ) . '</label><input type="text" readonly onclick="this.select()" value="' . esc_attr( PG_WA_Inbox::verify_token() ) . '"></div>';
+						echo '<p class="pg-alert ' . ( $ok ? 'pg-alert-ok' : 'pg-alert-warn' ) . '">' . ( $ok ? esc_html( sprintf( 'Webhook verified %s. Last event: %s', PG_Helpers::bd_time( $ok, 'd M, h:i A' ), $last ? PG_Helpers::bd_time( $last, 'd M, h:i A' ) : 'none yet' ) ) : esc_html__( 'Webhook not connected yet.', 'product-glide' ) ) . '</p>';
 						break;
 					case 'ai':
 						self::field_secret( 'or_key', __( 'OpenRouter API Key', 'product-glide' ), $s );

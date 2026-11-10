@@ -281,6 +281,7 @@ class PG_Packages {
 		}
 		$order->update_meta_data( '_pg_source', $source );
 		$order->calculate_totals( false );
+		add_action( 'shutdown', function () use ( $order ) { do_action( 'pg_order_created', $order->get_id() ); }, 0 );
 		$order->save();
 		if ( 'lead' === $source ) {
 			$msg = sprintf( 'Created from Product Glide incomplete order #%s (customer did not finish checkout; confirmed by phone).', $label );

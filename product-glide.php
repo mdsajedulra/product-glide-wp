@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Product Glide - All-in-One WooCommerce Courier & Order Hub
  * Description:       Fast, mobile-friendly order dashboard with Steadfast and Carrybee courier, fraud check, invoice printing, package builder, WhatsApp Cloud API, profit tracking and screenshot order creator. Runs natively inside WordPress (no external REST round-trips for order work).
- * Version:           1.10.3
+ * Version:           1.11.0
  * Author:            Md Sajedul Islam
  * Text Domain:       product-glide
  * Requires PHP:      7.4
@@ -12,8 +12,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PG_VERSION', '1.10.3' );
-define( 'PG_DB_VERSION', '1.3.0' );
+define( 'PG_VERSION', '1.11.0' );
+define( 'PG_DB_VERSION', '1.4.0' );
 define( 'PG_FILE', __FILE__ );
 define( 'PG_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PG_URL', plugin_dir_url( __FILE__ ) );
@@ -38,6 +38,7 @@ require_once PG_DIR . 'includes/class-pg-profit.php';
 require_once PG_DIR . 'includes/class-pg-ocr.php';
 require_once PG_DIR . 'includes/class-pg-geo.php';
 require_once PG_DIR . 'includes/class-pg-address.php';
+require_once PG_DIR . 'includes/class-pg-wa-inbox.php';
 require_once PG_DIR . 'includes/class-pg-admin.php';
 require_once PG_DIR . 'includes/class-pg-app.php';
 require_once PG_DIR . 'includes/class-pg-team.php';
@@ -99,6 +100,7 @@ add_action(
 		PG_Profit::init();
 		PG_OCR::init();
 		PG_Address::init();
+		PG_WA_Inbox::init();
 		PG_Settings::init();
 		PG_Admin::init();
 		PG_Team::init();

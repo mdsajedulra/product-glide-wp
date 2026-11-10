@@ -118,6 +118,7 @@ class PG_Orders {
 			) : null,
 			'next_invoice'  => PG_Steadfast::invoice_for( $order ),
 			'resched'       => PG_Reschedule::card( $order ),
+			'wa'            => self::wa_card( $order ),
 			'staff_notes'   => self::staff_notes( $order->get_id() ),
 			'dup'           => null,
 		);
@@ -447,6 +448,25 @@ class PG_Orders {
 		self::add_staff_note( $order, $text, $is_customer );
 		PG_Team::log( $order->get_id(), 'note', $text );
 		wp_send_json_success( array( 'notes' => self::notes_data( $order->get_id() ) ) );
+	}
+
+	/** WhatsApp delivery state + unread replies for the order card. */
+	public static function wa_card( $order ) {
+		if ( ! PG_WhatsApp::configured() ) {
+			return null;
+		}
+		global $wpdb;
+		$key = PG_WA_Inbox::key( $order->get_billing_phone() );
+		$c   = $key ? $wpdb->get_row( $wpdb->prepare( 'SELECT unread, has_wa FROM ' . PG_WA_Inbox::t_contact() . ' WHERE phone = %s', $key ) ) : null; // phpcs:ignore
+		$st  = (string) $order->get_meta( '_pg_wa_state' );
+		if ( $c && '0' === (string) $c->has_wa && '' === $st ) {
+			$st = 'none';
+		}
+		return array(
+			'state'  => $st,
+			'unread' => $c ? (int) $c->unread : 0,
+			'phone'  => $key,
+		);
 	}
 
 	/**

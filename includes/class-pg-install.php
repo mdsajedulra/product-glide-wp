@@ -40,6 +40,8 @@ class PG_Install {
 		$fraud   = self::table( 'fraud_cache' );
 		$costs   = self::table( 'costs' );
 		$wa      = self::table( 'wa_templates' );
+		$wam     = self::table( 'wa_messages' );
+		$wac     = self::table( 'wa_contacts' );
 
 		dbDelta(
 			"CREATE TABLE {$consign} (
@@ -156,6 +158,47 @@ class PG_Install {
 			KEY user_time (user_id,created_at),
 			KEY created_at (created_at),
 			KEY order_id (order_id)
+			) {$c};"
+		);
+
+		dbDelta(
+			"CREATE TABLE {$wam} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			wa_mid varchar(128) NOT NULL DEFAULT '',
+			phone varchar(20) NOT NULL,
+			direction varchar(3) NOT NULL DEFAULT 'out',
+			type varchar(20) NOT NULL DEFAULT 'text',
+			body text NULL,
+			media_id varchar(80) NOT NULL DEFAULT '',
+			mime varchar(80) NOT NULL DEFAULT '',
+			filename varchar(190) NOT NULL DEFAULT '',
+			template varchar(120) NOT NULL DEFAULT '',
+			status varchar(16) NOT NULL DEFAULT '',
+			error varchar(255) NOT NULL DEFAULT '',
+			order_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			created_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY wa_mid (wa_mid),
+			KEY phone_id (phone,id),
+			KEY order_id (order_id)
+			) {$c};"
+		);
+
+		dbDelta(
+			"CREATE TABLE {$wac} (
+			phone varchar(20) NOT NULL,
+			name varchar(120) NOT NULL DEFAULT '',
+			last_at datetime DEFAULT NULL,
+			last_in_at datetime DEFAULT NULL,
+			last_preview varchar(200) NOT NULL DEFAULT '',
+			last_dir varchar(3) NOT NULL DEFAULT '',
+			unread int(11) NOT NULL DEFAULT 0,
+			has_wa tinyint(1) DEFAULT NULL,
+			order_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (phone),
+			KEY last_at (last_at),
+			KEY unread (unread)
 			) {$c};"
 		);
 	}
