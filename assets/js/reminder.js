@@ -40,7 +40,10 @@
 	/* ---------- Floating pill ---------- */
 	function paintPill() {
 		document.title = (list.length ? '(' + list.length + ') ' : '') + baseTitle.replace(/^\(\d+\)\s*/, '');
-		if (!list.length) { if (pill) { pill.remove(); pill = null; } return; }
+		// No floating button any more (it covered the bulk-selection bar). The popup, the menu badge
+		// and the tab title still show follow-ups; the "Customer's date" tab lists them.
+		if (pill) { pill.remove(); pill = null; }
+		return;
 		if (!pill) {
 			pill = document.createElement('button');
 			pill.type = 'button';
