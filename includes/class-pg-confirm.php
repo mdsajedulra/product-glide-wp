@@ -19,6 +19,7 @@ class PG_Confirm {
 	const TEXT    = '_pg_confirm_text';
 	const CANCEL  = '_pg_cancel_req';
 	const REPLIED = '_pg_wa_replied';
+	const RESEND  = '_pg_resend_req';
 	const TAB     = 'call';
 	const OPEN    = array( 'processing', 'on-hold', 'pending' );
 
@@ -36,11 +37,17 @@ class PG_Confirm {
 	/* Reading WhatsApp replies                                            */
 	/* ------------------------------------------------------------------ */
 
-	/** yes | no | other */
+	/** yes | send | later | no | other */
 	public static function classify( $text ) {
 		$t = trim( mb_strtolower( (string) $text ) );
 		if ( '' === $t ) {
 			return 'other';
+		}
+		if ( preg_match( '/^(?:এখন\s*পাঠান|আবার\s*পাঠান|ekhon\s*pathan|abar\s*pathan|send\s*(?:now|again))/u', $t ) ) {
+			return 'send';
+		}
+		if ( preg_match( '/^(?:আরও\s*পরে|আরো\s*পরে|পরে\s*(?:পাঠান|দিন|নিব|নেব)|later|pore\s*(?:pathan|din|nibo))/u', $t ) ) {
+			return 'later';
 		}
 		$no = '/(বাতিল|ক্যান্সেল|cancel|লাগবে\s*না|লাগবেনা|lagbe\s*na|দরকার\s*নেই|দরকার\s*নাই|dorkar\s*(?:nai|nei)|নিব\s*না|নিবো\s*না|নেব\s*না|নেবো\s*না|nibo\s*na|nebo\s*na|চাই\s*না|chai\s*na|অর্ডার\s*করিনি|order\s*kori\s*ni|ভুল\s*করে|❌|^না$|^na$|^no$|^nah$)/u';
 		if ( preg_match( $no, $t ) ) {
@@ -78,15 +85,63 @@ class PG_Confirm {
 		return $out;
 	}
 
-	public static function on_wa( $key, $type, $text ) {
-		if ( ! in_array( $type, array( 'text', 'button', 'interactive' ), true ) && '' === trim( (string) $text ) ) {
-			$kind = 'other';
-		} else {
-			$kind = self::classify( $text );
+	/** Orders of this phone in a state where a WhatsApp answer means something (last 7 days). */
+	private static function phone_orders( $key ) {
+		$k   = PG_Helpers::phone_key( $key );
+		$map = PG_Helpers::orders_by_phone_keys( array( $k ) );
+		$out = array( 'open' => array(), 'resched' => array(), 'failed' => array() );
+		foreach ( array_slice( isset( $map[ $k ] ) ? $map[ $k ] : array(), 0, 6 ) as $r ) {
+			$o = wc_get_order( $r['id'] );
+			if ( ! $o || ( $o->get_date_created() && $o->get_date_created()->getTimestamp() < time() - 30 * DAY_IN_SECONDS ) ) {
+				continue;
+			}
+			$st = $o->get_status();
+			if ( PG_Reschedule::STATUS === $st ) {
+				$out['resched'][] = $o;
+			} elseif ( 'cancelled' === $st && PG_WhatsApp::courier_failed( $o->get_id() ) && $o->get_meta( '_pg_wa_sent_courier_failed' ) ) {
+				$out['failed'][] = $o;
+			} elseif ( in_array( $st, self::OPEN, true ) && ! PG_Steadfast::active( $o->get_id() ) && $o->get_date_created() && $o->get_date_created()->getTimestamp() > time() - 7 * DAY_IN_SECONDS ) {
+				$out['open'][] = $o;
+			}
 		}
-		foreach ( self::waiting_orders( $key ) as $o ) {
-			$short = mb_substr( trim( (string) $text ), 0, 120 );
-			if ( 'yes' === $kind ) {
+		return $out;
+	}
+
+	public static function on_wa( $key, $type, $text ) {
+		$kind  = ( in_array( $type, array( 'text', 'button', 'interactive' ), true ) || '' !== trim( (string) $text ) ) ? self::classify( $text ) : 'other';
+		$short = mb_substr( trim( (string) $text ), 0, 120 );
+		$all   = self::phone_orders( $key );
+
+		// Rescheduled order: "এখন পাঠান" / "জি" → back to the shipping queue, confirmed.
+		foreach ( $all['resched'] as $o ) {
+			$asked = (string) $o->get_meta( '_pg_wa_sent_resched_due' );
+			if ( '' === $asked || $asked !== (string) $o->get_meta( PG_Reschedule::AT ) ) {
+				continue; // only an answer to the "date arrived" message moves it
+			}
+			if ( in_array( $kind, array( 'send', 'yes' ), true ) ) {
+				$from = (string) $o->get_meta( PG_Reschedule::FROM );
+				$o->update_status( in_array( $from, self::OPEN, true ) ? $from : 'processing', 'Customer said on WhatsApp to send it now: "' . $short . '"' );
+				self::confirm( wc_get_order( $o->get_id() ), 'wa', $short, 0 );
+			} elseif ( 'later' === $kind ) {
+				$o->add_order_note( 'Customer asked on WhatsApp to wait longer: "' . $short . '" — set a new date.' );
+			} elseif ( 'no' === $kind ) {
+				$o->update_meta_data( self::CANCEL, $short );
+				$o->save_meta_data();
+				$o->add_order_note( 'Customer asked to cancel on WhatsApp: "' . $short . '" — call to check before cancelling.' );
+			}
+		}
+		// Courier could not deliver: "আবার পাঠান" → ask the team to book again.
+		foreach ( $all['failed'] as $o ) {
+			if ( in_array( $kind, array( 'send', 'yes' ), true ) ) {
+				$o->update_meta_data( self::RESEND, $short );
+				$o->save_meta_data();
+				$o->update_status( 'on-hold', 'Customer wants it sent again (WhatsApp): "' . $short . '" — book the courier again when the parcel is back.' );
+			} elseif ( 'no' === $kind ) {
+				$o->add_order_note( 'Customer does not want it sent again (WhatsApp): "' . $short . '"' );
+			}
+		}
+		foreach ( $all['open'] as $o ) {
+			if ( in_array( $kind, array( 'yes', 'send' ), true ) ) {
 				if ( ! $o->get_meta( self::HOW ) ) {
 					self::confirm( $o, 'wa', $short, 0 );
 				}
@@ -97,6 +152,9 @@ class PG_Confirm {
 			} else {
 				$o->update_meta_data( self::REPLIED, time() );
 				$o->save_meta_data();
+				if ( 'later' === $kind ) {
+					$o->add_order_note( 'Customer asked on WhatsApp to send it later: "' . $short . '" — reschedule it.' );
+				}
 			}
 		}
 		self::flush();
@@ -162,8 +220,9 @@ class PG_Confirm {
 	 * Each reason: array( code, label, level ). $fraud: the cached score row if known.
 	 */
 	public static function reasons( WC_Order $o, $fraud = false ) {
-		if ( ! in_array( $o->get_status(), self::OPEN, true ) || PG_Steadfast::active( $o->get_id() ) ) {
-			return array();
+		$parcel = PG_Steadfast::active( $o->get_id() );
+		if ( ! in_array( $o->get_status(), self::OPEN, true ) || ( $parcel && ! in_array( $parcel->courier_status, array( 'cancelled', 'voided' ), true ) ) ) {
+			return array(); // at the courier already (a cancelled parcel does not count)
 		}
 		$out    = array();
 		$how    = (string) $o->get_meta( self::HOW );
@@ -173,9 +232,13 @@ class PG_Confirm {
 		$wa_on  = PG_WhatsApp::configured();
 		$state  = (string) $o->get_meta( '_pg_wa_state' );
 
+		$resend = (string) $o->get_meta( self::RESEND );
+		if ( '' !== $resend ) {
+			$out[] = array( 'resend', 'Wants it sent again — book the courier again', 'warn' );
+		}
 		if ( '' !== $cancel ) {
 			$out[] = array( 'cancel', 'Asked to cancel on WhatsApp: "' . $cancel . '"', 'bad' );
-		} elseif ( '' === $how ) {
+		} elseif ( '' === $how && '' === $resend ) {
 			if ( ! $wa_on ) {
 				$out[] = array( 'new', 'Not confirmed yet', 'info' );
 			} elseif ( 'none' === $state ) {
@@ -235,7 +298,7 @@ class PG_Confirm {
 				'return'       => 'ids',
 			)
 		);
-		$rank = array( 'cancel' => 0, 'nowa' => 1, 'wafail' => 1, 'score' => 2, 'noreply' => 3, 'new' => 3, 'value' => 4, 'replied' => 5 );
+		$rank = array( 'cancel' => 0, 'resend' => 1, 'nowa' => 1, 'wafail' => 1, 'score' => 2, 'noreply' => 3, 'new' => 3, 'value' => 4, 'replied' => 5 );
 		$rows = array();
 		foreach ( $cand as $i => $id ) {
 			$o = wc_get_order( $id );

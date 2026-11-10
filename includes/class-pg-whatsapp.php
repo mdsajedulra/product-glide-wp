@@ -9,7 +9,20 @@ defined( 'ABSPATH' ) || exit;
  */
 class PG_WhatsApp {
 
-	const VARS = array( 'name', 'order_id', 'items', 'total', 'amount', 'address', 'phone', 'tracking' );
+	const VARS = array( 'name', 'order_id', 'items', 'total', 'amount', 'cod', 'shipping', 'address', 'phone', 'tracking', 'courier', 'brand', 'pay_number' );
+
+	/** Triggers that are not order statuses. */
+	const EVENTS = array(
+		'new_order'      => 'New order (right after it is placed)',
+		'reminder'       => 'No reply to the new-order message (reminder, once)',
+		'call_missed'    => 'Call not received (staff note)',
+		'resched_due'    => 'Rescheduled date arrived',
+		'courier_failed' => 'Courier could not deliver (parcel returning)',
+	);
+
+	/** Automatic messages wait outside these hours (Bangladesh time) except the new-order message. */
+	const QUIET_FROM = 21;
+	const QUIET_TO   = 9;
 
 	/** True while an automatic (not staff-clicked) message is being sent. */
 	private static $auto = false;
@@ -24,6 +37,108 @@ class PG_WhatsApp {
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'on_new_order' ), 50, 1 );
 		add_action( 'pg_order_created', array( __CLASS__, 'on_new_order' ), 50, 1 );
 		add_action( 'pg_wa_new_order', array( __CLASS__, 'send_new_order' ), 10, 1 );
+		add_action( 'pg_staff_note', array( __CLASS__, 'on_staff_note' ), 10, 2 );
+		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) );
+		add_action( 'pg_wa_cron', array( __CLASS__, 'cron' ) );
+		if ( ! wp_next_scheduled( 'pg_wa_cron' ) ) {
+			wp_schedule_event( time() + 120, 'pg_quarter_hour', 'pg_wa_cron' );
+		}
+	}
+
+	public static function schedules( $s ) {
+		$s['pg_quarter_hour'] = array( 'interval' => 15 * MINUTE_IN_SECONDS, 'display' => 'Every 15 minutes (Product Glide)' );
+		return $s;
+	}
+
+	public static function quiet_now() {
+		$h = (int) PG_Helpers::bd_time( time(), 'G' );
+		return $h >= self::QUIET_FROM || $h < self::QUIET_TO;
+	}
+
+	public static function map_for( $trigger ) {
+		foreach ( self::mappings() as $m ) {
+			if ( $m->enabled && $trigger === $m->trigger_status && $m->template_name ) {
+				return $m;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Send the template mapped to a trigger, once per order (or once per $once_key).
+	 * Skips numbers known to have no WhatsApp (except the first, new-order message).
+	 */
+	public static function send_trigger( WC_Order $order, $trigger, $once_key = '' ) {
+		if ( ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() ) {
+			return false;
+		}
+		$m = self::map_for( $trigger );
+		if ( ! $m ) {
+			return false;
+		}
+		$key = '_pg_wa_sent_' . $trigger;
+		$val = '' !== $once_key ? (string) $once_key : '1';
+		if ( (string) $order->get_meta( $key ) === $val || ( '' === $once_key && $order->get_meta( $key ) ) ) {
+			return false;
+		}
+		if ( 'new_order' !== $trigger && 'none' === $order->get_meta( '_pg_wa_state' ) ) {
+			return false;
+		}
+		$order->update_meta_data( $key, '' !== $once_key ? $val : time() ); // claim first: never twice
+		$order->save_meta_data();
+		self::$auto = true;
+		$res        = self::send_template( $order, $m->template_name, $m->language, $m->variables, (bool) $m->has_header_text );
+		self::$auto = false;
+		return ! is_wp_error( $res );
+	}
+
+	/** Staff wrote "Call not received" / "Phone switched off" → message the customer on WhatsApp. */
+	public static function on_staff_note( $order, $text ) {
+		if ( ! $order || ! preg_match( '/(call\s*not\s*received|not\s*received|switched\s*off|phone\s*off|not\s*reachable|unreachable|ফোন\s*ধর(?:ে|ছে)\s*না|কল\s*ধর(?:ে|ছে)\s*না|ফোন\s*বন্ধ|রিসিভ\s*কর(?:ে|ছে)\s*না)/iu', (string) $text ) ) {
+			return;
+		}
+		if ( ! in_array( $order->get_status(), array( 'processing', 'on-hold', 'pending', 'rescheduled' ), true ) || $order->get_meta( '_pg_confirmed' ) ) {
+			return;
+		}
+		self::send_trigger( $order, 'call_missed' );
+	}
+
+	/** Every 15 minutes: confirmation reminders and rescheduled-date messages (not at night). */
+	public static function cron() {
+		if ( ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() || self::quiet_now() ) {
+			return;
+		}
+		if ( self::map_for( 'reminder' ) ) {
+			$hours = max( 1, (float) PG_Settings::get( 'wa_reminder_hours', 3 ) );
+			$ids   = wc_get_orders(
+				array(
+					'type'         => 'shop_order',
+					'status'       => array( 'processing', 'on-hold', 'pending' ),
+					'limit'        => 100,
+					'return'       => 'ids',
+					'date_created' => ( time() - 2 * DAY_IN_SECONDS ) . '...' . ( time() - (int) ( $hours * HOUR_IN_SECONDS ) ),
+				)
+			);
+			foreach ( $ids as $id ) {
+				$o = wc_get_order( $id );
+				if ( ! $o || ! $o->get_meta( '_pg_wa_sent_new_order' ) || $o->get_meta( '_pg_confirmed' ) || $o->get_meta( '_pg_cancel_req' ) || $o->get_meta( '_pg_wa_replied' ) || PG_Steadfast::active( $id ) ) {
+					continue;
+				}
+				if ( in_array( $o->get_meta( '_pg_wa_state' ), array( 'none', 'failed' ), true ) ) {
+					continue;
+				}
+				self::send_trigger( $o, 'reminder' );
+			}
+		}
+		if ( self::map_for( 'resched_due' ) ) {
+			foreach ( PG_Reschedule::ids( true ) as $id ) {
+				$o  = wc_get_order( $id );
+				$at = $o ? (int) $o->get_meta( PG_Reschedule::AT ) : 0;
+				if ( $at && $at <= time() && $at > time() - DAY_IN_SECONDS ) {
+					self::send_trigger( $o, 'resched_due', (string) $at ); // once per follow-up date
+				}
+			}
+		}
 	}
 
 	/** Public wrapper for other classes (inbox, media). */
@@ -83,6 +198,9 @@ class PG_WhatsApp {
 		if ( 'pending' === $order->get_status() && 'cod' !== $order->get_payment_method() ) {
 			return; // online payment not finished yet
 		}
+		if ( '' === (string) $order->get_billing_phone() ) {
+			return;
+		}
 		$order->update_meta_data( '_pg_wa_sent_new_order', time() ); // claim first so the cron fallback never sends twice
 		$order->save_meta_data();
 		self::$auto = true;
@@ -96,7 +214,7 @@ class PG_WhatsApp {
 	}
 
 	/** Template body with {{1}}… filled in, for showing in the inbox. */
-	private static function render_body( $template, $lang, $params ) {
+	public static function render_body( $template, $lang, $params ) {
 		$list = self::templates();
 		$body = '';
 		if ( is_array( $list ) ) {
@@ -197,6 +315,11 @@ class PG_WhatsApp {
 		return $wpdb->get_results( "SELECT * FROM {$t} ORDER BY id ASC" ); // phpcs:ignore
 	}
 
+	public static function brand() {
+		$b = trim( (string) PG_Settings::get( 'brand_name', '' ) );
+		return '' !== $b ? $b : get_bloginfo( 'name' );
+	}
+
 	public static function vars_for( WC_Order $order ) {
 		$c = PG_Steadfast::active( $order->get_id() );
 		return array(
@@ -207,6 +330,11 @@ class PG_WhatsApp {
 			'amount'   => wc_format_decimal( $order->get_total(), 0 ), // number only, for templates that already say "টাকা"
 			'address'  => mb_substr( PG_Helpers::order_address( $order ), 0, 300 ),
 			'phone'    => (string) PG_Helpers::bd_phone( $order->get_billing_phone() ),
+			'cod'      => wc_format_decimal( $c && null !== $c->cod_amount ? $c->cod_amount : $order->get_total(), 0 ) . ' টাকা',
+			'shipping' => wc_format_decimal( $order->get_shipping_total(), 0 ) . ' টাকা',
+			'courier'  => $c ? PG_Courier::label( isset( $c->provider ) ? $c->provider : 'steadfast' ) : '-',
+			'brand'    => self::brand(),
+			'pay_number' => (string) ( PG_Settings::get( 'wa_pay_number', '' ) ? PG_Settings::get( 'wa_pay_number', '' ) : PG_Settings::get( 'hotline', '-' ) ),
 			'tracking' => $c && $c->tracking_code ? $c->tracking_code : '-',
 		);
 	}
@@ -265,24 +393,23 @@ class PG_WhatsApp {
 	}
 
 	public static function on_status( $order_id, $from, $to, $order ) {
-		if ( ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() ) {
+		if ( ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() || ! $order ) {
 			return;
 		}
-		foreach ( self::mappings() as $m ) {
-			if ( $m->enabled && $m->trigger_status === $to && $m->template_name ) {
-				$key = '_pg_wa_sent_' . $to;
-				if ( $order->get_meta( $key ) ) {
-					continue; // Never message the same customer twice for the same status.
-				}
-				self::$auto = true;
-				$res        = self::send_template( $order, $m->template_name, $m->language, $m->variables, (bool) $m->has_header_text );
-				self::$auto = false;
-				if ( ! is_wp_error( $res ) ) {
-					$order->update_meta_data( $key, time() );
-					$order->save_meta_data();
-				}
-			}
+		$trigger = $to;
+		// The courier cancelled the parcel = delivery failed, not "your order is cancelled".
+		if ( 'cancelled' === $to && self::courier_failed( $order_id ) ) {
+			$trigger = 'courier_failed';
 		}
+		self::send_trigger( $order, $trigger );
+	}
+
+	/** Was the latest courier parcel of this order cancelled by the courier? */
+	public static function courier_failed( $order_id ) {
+		global $wpdb;
+		$t = PG_Install::table( 'consignments' );
+		$s = $wpdb->get_var( $wpdb->prepare( "SELECT courier_status FROM {$t} WHERE order_id = %d AND consignment_id <> '' ORDER BY id DESC LIMIT 1", $order_id ) ); // phpcs:ignore
+		return 'cancelled' === $s;
 	}
 
 	/* AJAX */
@@ -307,7 +434,7 @@ class PG_WhatsApp {
 			},
 			array_keys( wc_get_order_statuses() )
 		);
-		$valid[] = 'new_order';
+		$valid = array_merge( $valid, array_keys( self::EVENTS ) );
 		$wpdb->query( "DELETE FROM {$t}" ); // phpcs:ignore
 		foreach ( $rows as $r ) {
 			$status = sanitize_key( isset( $r['trigger_status'] ) ? $r['trigger_status'] : '' );
@@ -367,10 +494,7 @@ class PG_WhatsApp {
 	/** Mapping editor shown under Settings → WhatsApp. */
 	public static function render_mapping_ui() {
 		$rows     = self::mappings();
-		$statuses = array(
-			'manual'    => __( 'Manual button only', 'product-glide' ),
-			'new_order' => __( 'New order (right after it is placed)', 'product-glide' ),
-		);
+		$statuses = array( 'manual' => __( 'Manual button only', 'product-glide' ) ) + self::EVENTS;
 		foreach ( wc_get_order_statuses() as $k => $l ) {
 			$statuses[ substr( $k, 3 ) ] = $l;
 		}

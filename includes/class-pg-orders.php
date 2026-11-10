@@ -459,6 +459,7 @@ class PG_Orders {
 		$is_customer = (bool) PG_Helpers::post_int( 'customer' );
 		self::add_staff_note( $order, $text, $is_customer );
 		PG_Team::log( $order->get_id(), 'note', $text );
+		do_action( 'pg_staff_note', $order, $text );
 		wp_send_json_success( array( 'notes' => self::notes_data( $order->get_id() ) ) );
 	}
 

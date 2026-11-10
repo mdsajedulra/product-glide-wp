@@ -104,6 +104,7 @@ class PG_Admin {
 			'couriers'    => PG_Courier::available(),
 			'courier'     => PG_Courier::default_courier(),
 			'waReady'     => PG_WhatsApp::configured(),
+			'waMaps'      => PG_WhatsApp::configured() ? array_values( array_map( function ( $m ) { return array( 'id' => (int) $m->id, 'name' => $m->template_name, 'trigger' => $m->trigger_status ); }, array_filter( PG_WhatsApp::mappings(), function ( $m ) { return $m->enabled && $m->template_name; } ) ) ) : array(),
 			'fraudAuto'   => (bool) $s['fraud_auto'],
 			'pkgDelivery' => (float) $s['pkg_delivery_charge'],
 			'aiOn'        => '' !== (string) $s['or_key'] && '' !== trim( (string) $s['or_model'] ),

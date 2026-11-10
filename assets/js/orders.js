@@ -228,6 +228,24 @@
 		}).catch(function (err) { A.toast(err.message, 'bad'); A.busy(el, false); });
 	}
 
+	/** "Send WA": pick which approved template to send to this customer. */
+	var WA_NAMES = { pg_order_new: 'Order confirmation', pg_order_reminder: 'Confirmation reminder', pg_call_missed: 'We could not reach you', pg_order_shipped: 'Sent to courier', pg_resched_due: 'Send now? (rescheduled)', pg_delivery_failed: 'Delivery failed — send again?', pg_order_delivered: 'Delivered — thank you', pg_order_cancelled: 'Order cancelled', pg_advance_payment: 'Ask for advance delivery charge' };
+	function chooseWa(id) {
+		var o = state.orders[id], maps = (cfg.waMaps || []).filter(function (m, i, arr) { return arr.findIndex(function (x) { return x.name === m.name; }) === i; });
+		if (!maps.length) { A.toast('No WhatsApp template is set up yet.', 'bad'); return; }
+		var m = A.modal('Send WhatsApp to ' + (o && o.name ? o.name : 'customer'),
+			'<div class="pg-wa-pick">' + maps.map(function (x) {
+				return '<button type="button" class="pg-wa-pick-btn" data-map="' + x.id + '"><b>' + esc(WA_NAMES[x.name] || x.name) + '</b><span>' + esc(x.name) + '</span></button>';
+			}).join('') + '</div>', { center: true });
+		m.body.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-map]');
+			if (!b) { return; }
+			A.busy(b, true);
+			A.ajax('pg_wa_send', { order_id: id, map_id: b.getAttribute('data-map') }).then(function (d) { A.toast(d.message, 'ok'); m.close(); })
+				.catch(function (err) { A.toast(err.message, 'bad'); A.busy(b, false); });
+		});
+	}
+
 	/* ---------- Staff notes on the card ---------- */
 
 	function staffNotesHtml(o) {
@@ -749,11 +767,7 @@
 				break;
 			case 'print': window.open(A.printUrl([id]), '_blank'); break;
 			case 'jpg': window.PGInvoiceJPG && window.PGInvoiceJPG.open(o); break;
-			case 'wa':
-				A.busy(el, true);
-				A.ajax('pg_wa_send', { order_id: id }).then(function (d) { A.toast(d.message, 'ok'); })
-					.catch(function (err) { A.toast(err.message, 'bad'); }).finally(function () { A.busy(el, false); });
-				break;
+			case 'wa': chooseWa(id); break;
 			case 'chip': addNote(id, el.getAttribute('data-note'), el); break;
 			case 'add-note':
 				var inp = card.querySelector('[data-note-input]');

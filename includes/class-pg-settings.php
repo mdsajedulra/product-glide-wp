@@ -85,6 +85,8 @@ class PG_Settings {
 			'wa_app_secret'       => '',
 			'wa_verify_token'     => '',
 			'wa_app_id'           => '',
+			'wa_pay_number'       => '',
+			'wa_reminder_hours'   => 3,
 			// AI / OCR (OpenRouter).
 			'or_key'              => '',
 			'or_model'            => '',
@@ -136,7 +138,7 @@ class PG_Settings {
 		$defs = self::defaults();
 		$in   = wp_unslash( $_POST ); // phpcs:ignore
 
-		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret', 'sf_pickup_address', 'sf_pickup_phone', 'sf_pickup_note', 'del_suburb_list' );
+		$text_keys = array( 'brand_name', 'logo_url', 'hotline', 'sf_base_url', 'sf_default_note', 'wa_phone_id', 'wa_waba_id', 'wa_lang', 'wa_api_version', 'or_model', 'inv_logo', 'inv_company', 'inv_website', 'inv_phone', 'inv_email', 'gh_repo', 'cb_client_id', 'cb_store_id', 'cb_default_note', 'cb_webhook_secret', 'sf_pickup_address', 'sf_pickup_phone', 'sf_pickup_note', 'del_suburb_list', 'wa_pay_number' );
 		foreach ( $text_keys as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = in_array( $k, array( 'logo_url', 'sf_base_url', 'inv_logo' ), true ) ? esc_url_raw( trim( $in[ $k ] ) ) : sanitize_text_field( $in[ $k ] );
@@ -171,7 +173,7 @@ class PG_Settings {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
 		}
-		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value' ) as $k ) {
+		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value', 'wa_reminder_hours' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 0, (float) $in[ $k ] );
 			}
@@ -338,6 +340,11 @@ class PG_Settings {
 						echo '<p class="pg-muted">' . esc_html__( 'Uses the Steadfast API keys from the Steadfast tab.', 'product-glide' ) . '</p>';
 						break;
 					case 'whatsapp':
+						echo '<div class="pg-grid pg-grid-2">';
+						self::field_text( 'wa_pay_number', __( 'bKash / Nagad number for advance payment messages', 'product-glide' ), $s );
+						self::field_number( 'wa_reminder_hours', __( 'Send the confirmation reminder after (hours without a reply)', 'product-glide' ), $s );
+						echo '</div>';
+						echo '<p class="pg-muted">' . esc_html__( 'Automatic messages (except the new-order message) are held between 9 PM and 9 AM and go out in the morning.', 'product-glide' ) . '</p>';
 						echo '<details class="pg-wa-adv"><summary>' . esc_html__( 'Advanced settings (Quick connect fills these in)', 'product-glide' ) . '</summary>';
 						self::field_text( 'wa_phone_id', __( 'Phone Number ID', 'product-glide' ), $s );
 						self::field_text( 'wa_waba_id', __( 'WhatsApp Business Account ID (WABA)', 'product-glide' ), $s );

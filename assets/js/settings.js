@@ -21,26 +21,30 @@
 	if (waQ) {
 		var $go = document.getElementById('pg-wa-q-go'), $out = document.getElementById('pg-wa-q-out'), $st = document.getElementById('pg-wa-q-status'), $ch = document.getElementById('pg-wa-q-choose');
 		var line = function (ok, text) { return '<li class="' + (ok ? 'is-ok' : 'is-bad') + '"><span>' + (ok ? '✓' : '!') + '</span>' + esc(text) + '</li>'; };
+		var STL = { approved: ['is-ok', 'Approved — in use'], pending: ['is-wait', 'Waiting for Meta'], in_review: ['is-wait', 'Waiting for Meta'], rejected: ['is-bad', 'Rejected'], missing: ['is-todo', 'Not created'], paused: ['is-bad', 'Paused by Meta'], disabled: ['is-bad', 'Disabled'] };
 		var paintStatus = function (s) {
 			if (!s || !s.connected) { $st.innerHTML = ''; return; }
-			var tpl = '', mk = function (label) { return ' <button type="button" class="pg-btn pg-btn-sm pg-btn-primary" id="pg-wa-q-tpl">' + label + '</button>'; };
-			if (s.tpl === 'approved') { tpl = line(true, 'Template in use: ' + s.tpl_name + (s.buttons ? ' — with Confirm / Cancel buttons' : '')); }
-			if (s.v2 === 'pending' || s.v2 === 'in_review') { tpl += '<li class="is-wait"><span>…</span>Button version is waiting for Meta approval (minutes to a few hours). The current message keeps going out; this page switches over by itself.</li>'; }
-			else if (s.v2 === 'rejected') { tpl += '<li class="is-bad"><span>!</span>Meta rejected the button version' + (s.tpl_reason ? ' (' + esc(s.tpl_reason) + ')' : '') + '.' + mk('Try again') + '</li>'; }
-			else if (s.can_upgrade && s.tpl === 'approved' && !s.buttons) { tpl += '<li class="is-todo"><span>+</span>Add "কনফার্ম করছি / বাতিল করতে চাই" buttons to the message' + mk('Create button version') + '</li>'; }
-			else if (s.can_upgrade && !s.tpl) { tpl += '<li class="is-todo"><span>3</span>Create the order-confirmation template' + mk('Create & send for approval') + '</li>'; }
+			var rows = (s.templates || []).map(function (t) {
+				var st = STL[t.status] || ['is-todo', t.status];
+				return '<details class="pg-wa-tpl-row"><summary><span class="pg-wa-tpl-st ' + st[0] + '">' + esc(st[1]) + '</span><b>' + esc(t.label) + '</b><span class="pg-muted">' + esc(t.when) + '</span></summary>' +
+					'<div class="pg-wa-tpl-prev"><pre>' + esc(t.preview) + '</pre>' + (t.buttons && t.buttons.length ? '<div class="pg-wa-tpl-btns">' + t.buttons.map(function (b) { return '<span>' + esc(b) + '</span>'; }).join('') + '</div>' : '') +
+					'<div class="pg-muted">Template name: ' + esc(t.name) + (t.reason ? ' · Rejected: ' + esc(t.reason) : '') + '</div></div></details>';
+			}).join('');
 			$st.innerHTML = '<ul class="pg-wa-q-list">' +
 				line(true, 'Connected' + (s.phone ? ': ' + s.phone : '')) +
 				line(s.hook, s.hook ? 'Webhook connected (replies + no-WhatsApp detection)' : 'Webhook not connected — add the App Secret and click Reconnect') +
-				tpl +
-				line(s.auto && s.map, s.auto && s.map ? 'New-order message is ON' : 'New-order message turns on by itself when the template is approved') +
+				line(s.auto, s.auto ? 'Automatic messages are ON' : 'Automatic messages are OFF — tick "Send automatic messages" below') +
 				'</ul>' +
-				(s.map ? '<div class="pg-wa-q-test"><input type="tel" id="pg-wa-q-phone" placeholder="Your mobile, e.g. 017…"><button type="button" class="pg-btn" id="pg-wa-q-send">Send a test message</button></div>' : '');
+				'<div class="pg-wa-tpls"><div class="pg-wa-tpls-head"><h3>Message templates</h3>' +
+					(s.missing ? '<button type="button" class="pg-btn pg-btn-primary pg-btn-sm" id="pg-wa-q-tpl">Create ' + s.missing + ' missing template' + (s.missing > 1 ? 's' : '') + '</button>' : '') + '</div>' +
+					(s.pending ? '<p class="pg-muted">' + s.pending + ' waiting for Meta approval. Each switches on by itself when approved — this page and an hourly check take care of it.</p>' : '') +
+					rows + '</div>' +
+				(s.templates && s.templates.some(function (t) { return t.key === 'new' && t.status === 'approved'; }) ? '<div class="pg-wa-q-test"><input type="tel" id="pg-wa-q-phone" placeholder="Your mobile, e.g. 017…"><button type="button" class="pg-btn" id="pg-wa-q-send">Send a test message</button></div>' : '');
 			var tb = document.getElementById('pg-wa-q-tpl');
 			if (tb) {
 				tb.addEventListener('click', function () {
 					A.busy(tb, true);
-					A.ajax('pg_wa_setup_make_tpl', {}).then(function (d) { A.toast(d.message, 'ok'); paintStatus(d.status); poll(); })
+					A.ajax('pg_wa_setup_make_tpl', {}).then(function (d) { A.toast(d.message, 'ok'); paintStatus(d.status); })
 						.catch(function (e) { A.toast(e.message, 'bad'); A.busy(tb, false); });
 				});
 			}
@@ -52,7 +56,7 @@
 						.catch(function (e) { A.toast(e.message, 'bad'); }).finally(function () { A.busy(sb, false); });
 				});
 			}
-			if (s.v2 === 'pending' || s.v2 === 'in_review') { poll(); }
+			if (s.pending) { poll(); }
 		};
 		var timer = null;
 		var poll = function () {
