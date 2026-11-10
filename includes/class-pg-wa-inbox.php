@@ -19,7 +19,7 @@ class PG_WA_Inbox {
 
 	public static function init() {
 		add_action( 'rest_api_init', array( __CLASS__, 'routes' ) );
-		foreach ( array( 'inbox', 'thread', 'reply', 'send_tpl', 'unread', 'mark' ) as $a ) {
+		foreach ( array( 'inbox', 'thread', 'reply', 'send_tpl', 'unread', 'mark', 'quick' ) as $a ) {
 			add_action( 'wp_ajax_pg_wa_' . $a, array( __CLASS__, 'ajax_' . $a ) );
 		}
 		add_action( 'wp_ajax_pg_wa_media', array( __CLASS__, 'ajax_media' ) );
@@ -647,6 +647,36 @@ class PG_WA_Inbox {
 			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
 		}
 		wp_send_json_success( array( 'ok' => 1 ) );
+	}
+
+	public static function quick_list() {
+		return array_values( array_filter( array_map( 'trim', explode( "\n", (string) PG_Settings::get( 'wa_quick_replies', '' ) ) ) ) );
+	}
+
+	/** Add / remove a quick reply from the inbox (shared by the whole team). */
+	public static function ajax_quick() {
+		PG_Helpers::guard_ajax();
+		$list = self::quick_list();
+		$op   = PG_Helpers::post( 'op', '' );
+		if ( 'add' === $op ) {
+			$text = trim( preg_replace( '/\s*\n\s*/u', ' ', PG_Helpers::post_textarea( 'text' ) ) );
+			if ( '' === $text ) {
+				wp_send_json_error( array( 'message' => __( 'Write the reply first.', 'product-glide' ) ) );
+			}
+			if ( ! in_array( $text, $list, true ) ) {
+				$list[] = mb_substr( $text, 0, 1000 );
+			}
+		} elseif ( 'delete' === $op ) {
+			$i = PG_Helpers::post_int( 'index' );
+			if ( isset( $list[ $i ] ) && $list[ $i ] === trim( PG_Helpers::post_textarea( 'text' ) ) ) {
+				array_splice( $list, $i, 1 );
+			}
+		}
+		$s                     = get_option( 'pg_settings', array() );
+		$s['wa_quick_replies'] = implode( "\n", $list );
+		update_option( 'pg_settings', $s, false );
+		PG_Settings::flush();
+		wp_send_json_success( array( 'quick' => self::quick_list() ) );
 	}
 
 	public static function ajax_unread() {

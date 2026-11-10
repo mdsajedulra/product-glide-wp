@@ -208,7 +208,7 @@
 
 	function composerHtml() {
 		if (S.window > 0) {
-			return '<div class="wa-quick" data-quickpop hidden>' + (S.quick.length ? S.quick.map(function (q, i) { return '<button type="button" data-q-i="' + i + '">' + esc(q) + '</button>'; }).join('') : '<div class="wa-empty">Add quick replies in Settings → WhatsApp.</div>') + '</div>' +
+			return '<div class="wa-quick" data-quickpop hidden></div>' +
 				'<div class="wa-compose">' +
 					'<button type="button" class="wa-icon-btn" data-quick title="Quick replies" aria-label="Quick replies"><svg viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></button>' +
 					'<button type="button" class="wa-icon-btn" data-tplbtn title="Send a template" aria-label="Send a template"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H5.2L4 17.2V4zm0-2a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm2 4h12v2H6zm0 3h12v2H6zm0 3h8v2H6z"/></svg></button>' +
@@ -220,6 +220,26 @@
 		return '<div class="wa-closed">The customer has not written in the last 24 hours, so WhatsApp only allows an approved template. When they reply, normal chat opens for 24 hours.</div>' +
 			(S.maps.length ? '<div class="wa-compose"><select data-tpl>' + opts + '</select><button class="pg-btn pg-btn-primary" data-send-tpl' + (S.orders.length ? '' : ' disabled title="No order for this customer"') + '>Send template</button></div>' : '');
 	}
+	function quickHtml() {
+		var typed = ($chat.querySelector('[data-text]') || {}).value || '';
+		return '<div class="wa-quick-head"><b>Quick replies</b><span>Click to insert · shared with the team</span></div>' +
+			'<div class="wa-quick-list">' + (S.quick.length ? S.quick.map(function (q, i) {
+				return '<div class="wa-quick-item"><button type="button" class="wa-quick-use" data-q-i="' + i + '">' + esc(q) + '</button>' +
+					'<button type="button" class="wa-quick-del" data-q-del="' + i + '" title="Delete this reply" aria-label="Delete this reply">×</button></div>';
+			}).join('') : '<div class="wa-empty">No quick replies yet. Add your first one below.</div>') + '</div>' +
+			(typed.trim() ? '<button type="button" class="wa-quick-save" data-q-save>+ Save the message I typed as a quick reply</button>' : '') +
+			'<div class="wa-quick-add"><textarea data-q-new rows="2" placeholder="Write a new quick reply…"></textarea><button type="button" class="pg-btn pg-btn-primary pg-btn-sm" data-q-add>Add</button></div>';
+	}
+	function saveQuick(op, data, btn) {
+		if (btn) { A.busy(btn, true); }
+		return A.ajax('pg_wa_quick', Object.assign({ op: op }, data)).then(function (d) {
+			S.quick = d.quick || [];
+			var pop = $chat.querySelector('[data-quickpop]');
+			if (pop) { pop.innerHTML = quickHtml(); }
+			A.toast(op === 'add' ? 'Quick reply saved' : 'Quick reply deleted', 'ok');
+		}).catch(function (e) { A.toast(e.message, 'bad'); if (btn) { A.busy(btn, false); } });
+	}
+
 	function paintComposer() {
 		var c = $chat.querySelector('[data-composer]');
 		if (!c) { return; }
@@ -328,13 +348,31 @@
 			});
 			b.addEventListener('click', send);
 			var pop = $chat.querySelector('[data-quickpop]');
-			$chat.querySelector('[data-quick]').addEventListener('click', function () { pop.hidden = !pop.hidden; });
-			pop.addEventListener('click', function (e) {
-				var q = e.target.closest('[data-q-i]');
-				if (!q) { return; }
-				t.value = (t.value ? t.value.replace(/\s*$/, ' ') : '') + S.quick[+q.getAttribute('data-q-i')];
-				pop.hidden = true; grow(); t.focus();
+			$chat.querySelector('[data-quick]').addEventListener('click', function () {
+				if (pop.hidden) { pop.innerHTML = quickHtml(); }
+				pop.hidden = !pop.hidden;
 			});
+			pop.addEventListener('click', function (e) {
+				var q = e.target.closest('[data-q-i]'), del = e.target.closest('[data-q-del]');
+				if (q) {
+					t.value = (t.value ? t.value.replace(/\s*$/, ' ') : '') + S.quick[+q.getAttribute('data-q-i')];
+					pop.hidden = true; grow(); t.focus();
+				} else if (del) {
+					var i = +del.getAttribute('data-q-del');
+					if (window.confirm('Delete this quick reply?\n\n' + S.quick[i])) { saveQuick('delete', { index: i, text: S.quick[i] }, del); }
+				} else if (e.target.closest('[data-q-add]')) {
+					var nt = pop.querySelector('[data-q-new]');
+					if (!nt.value.trim()) { nt.focus(); return; }
+					saveQuick('add', { text: nt.value }, e.target.closest('[data-q-add]'));
+				} else if (e.target.closest('[data-q-save]')) {
+					saveQuick('add', { text: t.value }, e.target.closest('[data-q-save]'));
+				}
+			});
+			pop.addEventListener('keydown', function (e) {
+				if (e.key === 'Enter' && !e.shiftKey && e.target.hasAttribute('data-q-new')) { e.preventDefault(); pop.querySelector('[data-q-add]').click(); }
+				if (e.key === 'Escape') { pop.hidden = true; t.focus(); }
+			});
+
 			$chat.querySelector('[data-tplbtn]').addEventListener('click', function () {
 				if (!S.maps.length) { A.toast('No template set up yet.', 'bad'); return; }
 				var m = A.modal('Send a template', '<div class="pg-wa-pick">' + S.maps.map(function (x) { return '<button type="button" class="pg-wa-pick-btn" data-map="' + x.id + '"><b>' + esc(x.name) + '</b><span>' + esc(x.trigger) + '</span></button>'; }).join('') + '</div>', { center: true });
@@ -344,6 +382,12 @@
 		var tb = $chat.querySelector('[data-send-tpl]');
 		if (tb) { tb.addEventListener('click', function () { sendTemplate($chat.querySelector('[data-tpl]').value, tb); }); }
 	}
+
+	// Close the quick-reply list when clicking elsewhere (one listener for the whole page).
+	document.addEventListener('click', function (e) {
+		var pop = $chat.querySelector('[data-quickpop]');
+		if (pop && !pop.hidden && !pop.contains(e.target) && !e.target.closest('[data-quick]')) { pop.hidden = true; }
+	});
 
 	function send() {
 		var t = $chat.querySelector('[data-text]'), b = $chat.querySelector('[data-send]');
