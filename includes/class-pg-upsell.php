@@ -65,7 +65,7 @@ class PG_Upsell {
 				foreach ( $items as $p ) :
 					$reg  = (float) $p->get_regular_price();
 					$pr   = (float) $p->get_price();
-					$img  = wp_get_attachment_image_url( $p->get_image_id(), 'woocommerce_thumbnail' );
+					$img  = wp_get_attachment_image_url( $p->get_image_id(), 'medium' );
 					?>
 					<div class="pgu-card">
 						<a class="pgu-img" href="<?php echo esc_url( $p->get_permalink() ); ?>" target="_blank" rel="noopener">
@@ -103,8 +103,8 @@ class PG_Upsell {
 		.pgu-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s,box-shadow .15s}
 		.pgu-card:hover{border-color:#fca5a5;box-shadow:0 6px 18px rgba(0,0,0,.06)}
 		.pgu-card.is-added{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.15)}
-		.pgu-img{display:flex;align-items:center;justify-content:center;background:#f9fafb;aspect-ratio:3/4;padding:10px}
-		.pgu-img img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+		.pgu .pgu-img{display:block;position:relative;background:#f7f5f2;aspect-ratio:3/4;overflow:hidden}
+		.pgu .pgu-img img{position:absolute;top:8%;left:10%;width:80%!important;height:84%!important;max-width:none!important;object-fit:contain!important;border-radius:3px;box-shadow:0 4px 12px rgba(0,0,0,.12);margin:0!important}
 		.pgu-body{padding:10px 12px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
 		.pgu-name{color:#111827;font-weight:600;font-size:14px;line-height:1.4;text-decoration:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 		.pgu-price{display:flex;gap:8px;align-items:baseline}
@@ -135,10 +135,9 @@ class PG_Upsell {
 					var box = card.closest('.pgu').querySelector('.pgu-done');
 					box.hidden = false;
 					box.textContent = String(added).replace(/\d/g,function(c){return '০১২৩৪৫৬৭৮৯'[c];}) + ' টি বই অর্ডারে যোগ হয়েছে। এখন "অর্ডার করুন" চাপলে সব একসাথে আসবে।';
-					if (window.jQuery && d.fragments) { jQuery(document.body).trigger('added_to_cart', [d.fragments, d.cart_hash]); }
+					try { if (window.jQuery && d.fragments) { jQuery.each(d.fragments, function(k, v){ jQuery(k).replaceWith(v); }); } } catch (x) {}
 				}).catch(function(){
-					b.disabled = false; b.textContent = '+ সাথে নিন';
-					alert('যোগ করা যায়নি, আবার চেষ্টা করুন।');
+					b.disabled = false; b.textContent = 'আবার চেষ্টা করুন';
 				});
 			});
 		})();

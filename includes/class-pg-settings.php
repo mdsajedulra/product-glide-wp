@@ -28,6 +28,10 @@ class PG_Settings {
 			'call_max_tries'      => 3,
 			'call_retry_hours'    => 3,
 			'del_inside'          => 60,
+			'cart_fresh'          => 1,
+			'cart_fresh_minutes'  => 30,
+			'cart_no_dupe'        => 1,
+			'pp_note'             => '',
 			'del_suburb'          => 120,
 			'del_outside'         => 120,
 			'del_suburb_list'     => PG_Address::SUBURB_DEFAULT,
@@ -166,7 +170,7 @@ class PG_Settings {
 			$size                 = sanitize_key( $in['inv_page_size'] );
 			$new['inv_page_size'] = isset( PG_Invoice::sizes()[ $size ] ) ? $size : 'a4';
 		}
-		foreach ( array( 'shop_address', 'invoice_footer', 'inv_address', 'block_message', 'blocklist', 'block_list_message', 'wa_quick_replies' ) as $k ) {
+		foreach ( array( 'shop_address', 'invoice_footer', 'inv_address', 'block_message', 'blocklist', 'block_list_message', 'wa_quick_replies', 'pp_note' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = sanitize_textarea_field( $in[ $k ] );
 			}
@@ -176,7 +180,7 @@ class PG_Settings {
 				$new[ $k ] = max( 1, absint( $in[ $k ] ) );
 			}
 		}
-		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value', 'wa_reminder_hours', 'call_max_tries', 'call_retry_hours' ) as $k ) {
+		foreach ( array( 'pkg_delivery_charge', 'fallback_delivery', 'fallback_return', 'del_inside', 'del_suburb', 'del_outside', 'call_after_hours', 'call_low_score', 'call_high_value', 'wa_reminder_hours', 'call_max_tries', 'call_retry_hours', 'cart_fresh_minutes' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$new[ $k ] = max( 0, (float) $in[ $k ] );
 			}
@@ -204,7 +208,7 @@ class PG_Settings {
 			'steadfast' => array( 'sf_item_desc', 'sf_pickup_auto' ),
 			'fraud'     => array( 'fraud_auto' ),
 			'whatsapp'  => array( 'wa_auto' ),
-			'leads'     => array( 'lead_enabled', 'guard_bd_phone', 'block_repeat' ),
+			'leads'     => array( 'lead_enabled', 'guard_bd_phone', 'block_repeat', 'cart_fresh', 'cart_no_dupe' ),
 			'carrybee'  => array( 'cb_auto_area' ),
 			'general'   => array( 'sf_enabled', 'cb_enabled' ),
 		);
@@ -420,6 +424,12 @@ class PG_Settings {
 							}
 							echo '</div>';
 						}
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Cart', 'product-glide' ) . '</h3>';
+						self::field_check( 'cart_no_dupe', __( 'Clicking "Order" / "Add to cart" again for a product already in the cart sets its quantity instead of adding one more (no surprise quantity 2)', 'product-glide' ), $s );
+						self::field_check( 'cart_fresh', __( 'Start every new visit with an empty cart (customers who come back later do not see old items)', 'product-glide' ), $s );
+						self::field_number( 'cart_fresh_minutes', __( 'A visit ends after this many minutes without activity', 'product-glide' ), $s );
+						echo '<h3 class="pg-set-h">' . esc_html__( 'Product page', 'product-glide' ) . '</h3>';
+						self::field_textarea( 'pp_note', __( 'Important note shown above the FAQ on every product page (empty = hidden)', 'product-glide' ), $s );
 						echo '<h3 class="pg-set-h">' . esc_html__( 'Checkout protection', 'product-glide' ) . '</h3>';
 						self::field_check( 'guard_bd_phone', __( 'Accept only valid Bangladeshi mobile numbers at checkout (saved as 01XXXXXXXXX)', 'product-glide' ), $s );
 						self::field_check( 'block_repeat', __( 'Stop the same phone number from ordering again too soon', 'product-glide' ), $s );
