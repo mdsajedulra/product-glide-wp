@@ -1,0 +1,297 @@
+$PID = 3200;
+$img = function($id,$size='medium_large'){ $p=wc_get_product($id); return wp_get_attachment_image_url($p->get_image_id(),$size); };
+$c1 = $img(1148); $c2 = $img(1297); $cm = $img($PID,'large');
+$pdf1 = get_post_meta(1148,'_wppp_pdf_url',true); $pdf2 = get_post_meta(1297,'_wppp_pdf_url',true);
+// make the preview modal available on the combo page (first book), second book switched in by JS
+update_post_meta($PID,'_wppp_pdf_url',$pdf1);
+$p = wc_get_product($PID);
+$bn = fn($n)=>strtr((string)$n,['0'=>'০','1'=>'১','2'=>'২','3'=>'৩','4'=>'৪','5'=>'৫','6'=>'৬','7'=>'৭','8'=>'৮','9'=>'৯']);
+$price = $bn(number_format((float)$p->get_price())); $reg = $bn(number_format((float)$p->get_regular_price()));
+$sold = (int)$p->get_total_sales(); $soldTxt = $bn(number_format(floor($sold/100)*100)).'+';
+// original "important request" note from template 39
+$d39 = json_decode(get_post_meta(39,'_elementor_data',true),true); $note='';
+$walk=function($els) use (&$walk,&$note){ foreach((array)$els as $e){ if(($e['widgetType']??'')==='text-editor' && !$note) $note=$e['settings']['editor']; if(!empty($e['elements'])) $walk($e['elements']); } }; $walk($d39);
+$note = wp_kses_post($note);
+$CO = wc_get_checkout_url();
+
+$css = <<<'CSS'
+<style>
+:root{--pgl-red:#b91c1c;--pgl-red2:#991b1b;--pgl-ink:#1f2937;--pgl-mute:#4b5563;--pgl-line:#ece7e1;--pgl-cream:#fff8f1;--pgl-gold:#d97706}
+.pgl-page{font-family:'Hind Siliguri',system-ui,sans-serif;color:var(--pgl-ink)}
+.pgl-page *{box-sizing:border-box}
+.pgl-hero{padding:24px 16px 8px!important}
+.pgl-hero>.e-con-inner{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:start;max-width:1140px}
+.pgl-hero-l .woocommerce-product-gallery{border-radius:18px;overflow:hidden;background:#faf7f3;border:1px solid var(--pgl-line)}
+.pgl-hero-l .woocommerce-product-gallery img{border-radius:0}
+.pgl-hero-r{gap:12px!important}
+.pgl-hero-r .elementor-widget{margin:0!important}
+.pgl-badge{display:inline-flex;align-items:center;gap:8px;background:#fef3c7;color:#92400e;font-weight:700;font-size:14px;padding:6px 12px;border-radius:999px}
+.pgl-badge i{width:8px;height:8px;border-radius:50%;background:#d97706;display:inline-block}
+.pgl-hero-r .product_title{font-size:clamp(24px,3.2vw,34px)!important;line-height:1.3!important;font-weight:700!important;color:var(--pgl-ink)!important;margin:0!important}
+.pgl-sub{font-size:17px;line-height:1.65;color:var(--pgl-mute);margin:0}
+.pgl-hero-r .price{font-size:30px!important;font-weight:700!important;color:var(--pgl-red)!important;display:flex!important;gap:12px;align-items:baseline;margin:0!important}
+.pgl-hero-r .price del{font-size:20px;color:#9ca3af!important;font-weight:500;opacity:1}
+.pgl-hero-r .price ins{text-decoration:none}
+.pgl-pills{display:flex;flex-wrap:wrap;gap:8px}
+.pgl-pills span{background:#fff;border:1px solid var(--pgl-line);border-radius:999px;padding:5px 12px;font-size:14px;color:var(--pgl-mute)}
+.pgl-pills span b{color:var(--pgl-red)}
+.pgl-hero-r form.cart{display:flex!important;flex-wrap:wrap;gap:10px;align-items:stretch;margin:4px 0 0!important}
+.pgl-hero-r form.cart .quantity{display:none!important}
+.pgl-hero-r form.cart .bwb-order-btn{order:-1;flex:1 1 100%;min-height:56px;font-size:20px!important;border-radius:12px!important}
+.pgl-hero-r form.cart .single_add_to_cart_button{flex:1 1 100%;min-height:46px;border-radius:12px!important;background:#fff!important;color:var(--pgl-ink)!important;border:1.5px solid #d1d5db!important;font-weight:600!important}
+.pgl-hero-r #wppp-open-modal{width:100%;justify-content:center}
+.pgl-trust{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+.pgl-trust div{display:flex;gap:8px;align-items:center;background:var(--pgl-cream);border-radius:10px;padding:9px 11px;font-size:14px;line-height:1.35;color:var(--pgl-ink)}
+.pgl-trust svg{flex:none;color:var(--pgl-red)}
+.pgl-trust a{color:inherit;text-decoration:none;font-weight:700}
+
+.pgl-body{padding:0 16px!important}
+.pgl-body .elementor-widget-container{max-width:none}
+.pgl-up .pgu{max-width:1140px;margin:44px auto 0;font-family:'Hind Siliguri',system-ui,sans-serif}
+.pgl-up .pgu-title{font-size:clamp(22px,2.6vw,28px)}
+.pgl-sec{max-width:1140px;margin:0 auto;padding:44px 0 0}
+.pgl-h{font-size:clamp(22px,2.6vw,28px);font-weight:700;margin:0 0 6px;color:var(--pgl-ink);line-height:1.35}
+.pgl-lead{color:var(--pgl-mute);font-size:16px;margin:0 0 20px;line-height:1.6}
+.pgl-books{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.pgl-book{display:grid;grid-template-columns:130px 1fr;gap:16px;background:#fff;border:1px solid var(--pgl-line);border-radius:16px;padding:16px}
+.pgl-book img{width:130px;height:auto;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);display:block}
+.pgl-book h4{margin:0 0 4px;font-size:19px;font-weight:700;color:var(--pgl-ink)}
+.pgl-book .k{display:inline-block;font-size:12px;font-weight:700;color:var(--pgl-red);background:#fef2f2;border-radius:6px;padding:2px 8px;margin-bottom:8px}
+.pgl-book ul{list-style:none;margin:0 0 12px;padding:0;font-size:14.5px;color:var(--pgl-mute);line-height:1.8}
+.pgl-book ul li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#d1d5db;margin-right:8px;vertical-align:middle}
+.pgl-peek{border:1.5px solid var(--pgl-ink);background:#fff;color:var(--pgl-ink);border-radius:10px;padding:7px 14px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+.pgl-peek:hover{background:var(--pgl-ink);color:#fff}
+.pgl-sum{margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;background:var(--pgl-cream);border-radius:14px;padding:14px 18px;font-size:16px}
+.pgl-sum b{color:var(--pgl-red);font-size:20px}
+.pgl-why{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.pgl-why div{background:#fff;border:1px solid var(--pgl-line);border-radius:14px;padding:18px}
+.pgl-why .n{width:36px;height:36px;border-radius:10px;background:#fef2f2;color:var(--pgl-red);display:flex;align-items:center;justify-content:center;font-weight:700;margin-bottom:10px}
+.pgl-why h5{margin:0 0 6px;font-size:17px;font-weight:700;color:var(--pgl-ink)}
+.pgl-why p{margin:0;font-size:14.5px;color:var(--pgl-mute);line-height:1.6}
+.pgl-for{display:flex;flex-wrap:wrap;gap:10px}
+.pgl-for span{background:#fff;border:1px solid var(--pgl-line);border-radius:12px;padding:12px 16px;font-size:15.5px;font-weight:600;display:flex;gap:10px;align-items:center}
+.pgl-for span::before{content:"✓";color:#16a34a;font-weight:700}
+.pgl-author{display:flex;gap:18px;align-items:center;background:linear-gradient(135deg,#7f1d1d,#b91c1c);color:#fff;border-radius:18px;padding:24px}
+.pgl-author .av{flex:none;width:68px;height:68px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;font-family:serif}
+.pgl-author h4{margin:0 0 4px;font-size:20px;color:#fff;font-weight:700}
+.pgl-author p{margin:0;font-size:15.5px;line-height:1.65;color:#fde8e8}
+.pgl-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;counter-reset:s}
+.pgl-steps div{background:#fff;border:1px solid var(--pgl-line);border-radius:14px;padding:18px 18px 18px 60px;position:relative;font-size:15px;line-height:1.55;color:var(--pgl-mute)}
+.pgl-steps div::before{counter-increment:s;content:counter(s,bengali);position:absolute;left:16px;top:16px;width:32px;height:32px;border-radius:50%;background:var(--pgl-red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.pgl-steps b{display:block;color:var(--pgl-ink);font-size:16.5px;margin-bottom:2px}
+.pgl-warn{margin-top:14px;border:1px solid #fde68a;background:#fffbeb;border-radius:14px;padding:16px 18px;font-size:15px;line-height:1.7;color:#78350f}
+.pgl-warn strong.t{display:block;font-size:16.5px;margin-bottom:4px;color:#92400e}
+.pgl-warn p{margin:0}
+.pgl-faq details{background:#fff;border:1px solid var(--pgl-line);border-radius:12px;margin-bottom:10px;padding:0 18px}
+.pgl-faq summary{cursor:pointer;list-style:none;padding:15px 0;font-weight:700;font-size:16px;display:flex;justify-content:space-between;gap:12px}
+.pgl-faq summary::-webkit-details-marker{display:none}
+.pgl-faq summary::after{content:"+";font-size:22px;line-height:1;color:var(--pgl-red)}
+.pgl-faq details[open] summary::after{content:"–"}
+.pgl-faq details p{margin:0 0 15px;color:var(--pgl-mute);font-size:15px;line-height:1.7}
+.pgl-faq a{color:var(--pgl-red);font-weight:700}
+.pgl-info{width:100%;border-collapse:collapse;font-size:14.5px;background:#fff;border-radius:12px;overflow:hidden}
+.pgl-info th,.pgl-info td{border:1px solid var(--pgl-line);padding:9px 12px;text-align:left}
+.pgl-info th{background:#faf7f3;font-weight:700}
+.pgl-info td:first-child{color:var(--pgl-mute);white-space:nowrap}
+.pgl-final{margin:48px auto 40px;max-width:1140px;display:grid;grid-template-columns:150px 1fr auto;gap:22px;align-items:center;background:var(--pgl-cream);border:1px solid #f5e6d3;border-radius:20px;padding:22px}
+.pgl-final img{width:150px;border-radius:10px;display:block}
+.pgl-final h3{margin:0 0 6px;font-size:22px;font-weight:700;line-height:1.35;color:var(--pgl-ink)}
+.pgl-final p{margin:0;color:var(--pgl-mute);font-size:15px}
+.pgl-final .pr{font-size:26px;font-weight:700;color:var(--pgl-red);margin-top:6px}
+.pgl-final .pr del{font-size:17px;color:#9ca3af;font-weight:500;margin-left:6px}
+.pgl-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--pgl-red);color:#fff!important;border:0;border-radius:12px;padding:15px 28px;font-weight:700;font-size:19px;cursor:pointer;text-decoration:none!important;font-family:inherit;box-shadow:0 8px 20px rgba(185,28,28,.25);white-space:nowrap}
+.pgl-btn:hover{background:var(--pgl-red2)}
+.pgl-sticky{position:fixed;left:0;right:0;bottom:0;z-index:9990;background:#fff;border-top:1px solid var(--pgl-line);box-shadow:0 -6px 20px rgba(0,0,0,.08);padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:none;align-items:center;gap:12px;transform:translateY(110%);transition:transform .25s}
+.pgl-sticky.on{transform:none}
+.pgl-sticky .t{flex:1;min-width:0;line-height:1.25}
+.pgl-sticky .t b{display:block;color:var(--pgl-red);font-size:20px}
+.pgl-sticky .t small{color:var(--pgl-mute);font-size:12.5px}
+.pgl-sticky .pgl-btn{padding:12px 22px;font-size:17px}
+@media (max-width:900px){
+ .pgl-hero{padding-top:12px!important}
+ .pgl-hero>.e-con-inner{grid-template-columns:1fr;gap:18px}
+ .pgl-books{grid-template-columns:1fr}
+ .pgl-why{grid-template-columns:1fr 1fr}
+ .pgl-steps{grid-template-columns:1fr}
+ .pgl-final{grid-template-columns:90px 1fr;padding:16px;gap:14px}
+ .pgl-final img{width:90px}
+ .pgl-final .pgl-btn{grid-column:1/-1}
+ .pgl-sticky{display:flex}
+ body.single-product{padding-bottom:76px}
+}
+@media (max-width:520px){
+ .pgl-book{grid-template-columns:96px 1fr;padding:14px;gap:12px}
+ .pgl-book img{width:96px}
+ .pgl-why{grid-template-columns:1fr}
+ .pgl-trust{grid-template-columns:1fr}
+ .pgl-author{flex-direction:column;text-align:center}
+ .pgl-sec{padding-top:34px}
+}
+</style>
+CSS;
+
+$ico = [
+ 'cash'=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>',
+ 'truck'=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4h14v11H1zM15 8h4l4 4v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+ 'tag'=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+ 'chat'=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/></svg>',
+];
+
+$badge = $css.'<div class="pgl-page"><span class="pgl-badge"><i></i>'.$soldTxt.' জন এই কম্বো দিয়ে চাইনিজ শেখা শুরু করেছেন</span></div>';
+$sub = '<div class="pgl-page"><p class="pgl-sub">চাইনিজ শেখা শুরু করার জন্য দুটো বই একসাথে: <b>আমার প্রথম চাইনিজ বই</b> আর <b>পথকলি চাইনিজ</b>। বাংলায় বুঝে বুঝে প্রথম ধাপগুলো পার হওয়ার জন্য সাজানো।</p></div>';
+$pills = '<div class="pgl-page pgl-pills"><span><b>২টি</b> বই</span><span>মোট <b>৫৯৮</b> পৃষ্ঠা</span><span>লেখক: ড. মোহাম্মদ সাদী</span></div>';
+$trust = '<div class="pgl-page pgl-trust">'
+ .'<div>'.$ico['cash'].'<span>ক্যাশ অন ডেলিভারি, বই হাতে পেয়ে টাকা</span></div>'
+ .'<div>'.$ico['truck'].'<span>সারা দেশে হোম ডেলিভারি</span></div>'
+ .'<div>'.$ico['tag'].'<span>ডেলিভারি চার্জ ঢাকায় ৬০৳, বাইরে ১২০৳</span></div>'
+ .'<div>'.$ico['chat'].'<span>প্রশ্ন থাকলে WhatsApp: <a href="https://wa.me/8801516549037" target="_blank" rel="noopener">01516549037</a></span></div>'
+ .'</div>';
+
+$body = <<<HTML
+<div class="pgl-page">
+<section class="pgl-sec" id="pgl-books">
+ <h2 class="pgl-h">কম্বোতে যা পাচ্ছেন</h2>
+ <p class="pgl-lead">একই লেখকের দুটো বই, তাই শেখার ধারা এক বই থেকে আরেক বইয়ে একই রকম থাকে। কেনার আগে ভেতরের পাতা পড়ে দেখতে পারেন।</p>
+ <div class="pgl-books">
+  <div class="pgl-book">
+   <img src="{$c1}" alt="আমার প্রথম চাইনিজ বই" loading="lazy">
+   <div><span class="k">বই ১</span><h4>আমার প্রথম চাইনিজ বই</h4>
+    <ul><li>৪০৬ পৃষ্ঠা, ৩য় সংস্করণ</li><li>বাংলা, চাইনিজ ও ইংলিশ তিন ভাষায়</li><li>ISBN 978-984-36-0543-6</li></ul>
+    <button type="button" class="pgl-peek" data-pdf="{$pdf1}">একটু পড়ে দেখুন</button></div>
+  </div>
+  <div class="pgl-book">
+   <img src="{$c2}" alt="পথকলি চাইনিজ" loading="lazy">
+   <div><span class="k">বই ২</span><h4>পথকলি চাইনিজ</h4>
+    <ul><li>১৯২ পৃষ্ঠা, ১ম সংস্করণ</li><li>বাংলা ও চাইনিজ দুই ভাষায়</li><li>ISBN 978-984-36-0674-7</li></ul>
+    <button type="button" class="pgl-peek" data-pdf="{$pdf2}">একটু পড়ে দেখুন</button></div>
+  </div>
+ </div>
+ <div class="pgl-sum"><span>দুটো বই একসাথে</span><span><b>৳{$price}</b> <del style="color:#9ca3af">৳{$reg}</del></span><span>ক্যাশ অন ডেলিভারি</span></div>
+</section>
+
+<section class="pgl-sec">
+ <h2 class="pgl-h">কেন এই কম্বো দিয়ে শুরু করবেন</h2>
+ <p class="pgl-lead">চাইনিজ শেখা শুরু করতে গিয়ে অনেকেই বুঝতে পারেন না কোন বই দিয়ে শুরু করবেন। এই কম্বো সেই প্রশ্নের উত্তর।</p>
+ <div class="pgl-why">
+  <div><span class="n">১</span><h5>নতুনদের জন্য সাজানো</h5><p>যারা একদম শুরু থেকে চাইনিজ শিখতে চান, তাদের কথা মাথায় রেখে কম্বোটা তৈরি।</p></div>
+  <div><span class="n">২</span><h5>বাংলায় বোঝার সুযোগ</h5><p>দুটো বইয়েই বাংলা আছে, তাই অন্য ভাষার ওপর নির্ভর না করে নিজের ভাষায় বুঝে শিখতে পারবেন।</p></div>
+  <div><span class="n">৩</span><h5>একই লেখক, একই ধারা</h5><p>দুটো বইই ড. মোহাম্মদ সাদীর লেখা, তাই এক বই শেষ করে আরেকটায় গেলে নতুন করে মানিয়ে নিতে হয় না।</p></div>
+  <div><span class="n">৪</span><h5>{$soldTxt} পাঠকের পছন্দ</h5><p>এখন পর্যন্ত {$soldTxt} পাঠক এই কম্বো দিয়ে চাইনিজ শেখা শুরু করেছেন।</p></div>
+ </div>
+</section>
+
+<section class="pgl-sec">
+ <h2 class="pgl-h">এই কম্বো কাদের জন্য</h2>
+ <div class="pgl-for" style="margin-top:14px">
+  <span>যারা একদম শুরু থেকে চাইনিজ শিখতে চান</span>
+  <span>যারা স্কলারশিপ নিয়ে চীনে পড়তে যেতে চান</span>
+  <span>যারা চাইনিজ কোম্পানিতে চাকরি করতে চান</span>
+  <span>যারা চীন থেকে পণ্য আমদানি করেন বা ক্যান্টন ফেয়ারে যান</span>
+ </div>
+</section>
+
+<section class="pgl-sec">
+ <div class="pgl-author"><div class="av">সা</div><div><h4>লেখক: ড. মোহাম্মদ সাদী</h4><p>১১ বছর ধরে চাইনিজ ভাষা শেখাচ্ছেন। নতুনদের সহজ করে চাইনিজ শেখানোর অভিজ্ঞতা থেকেই বইগুলো লেখা।</p></div></div>
+</section>
+</div>
+HTML;
+
+$body2 = <<<HTML
+<div class="pgl-page">
+<section class="pgl-sec">
+ <h2 class="pgl-h">কিভাবে অর্ডার করবেন</h2>
+ <div class="pgl-steps" style="margin-top:14px">
+  <div><b>"অর্ডার করুন" চাপুন</b>পেজের ওপরে বা নিচের লাল বাটনে চাপ দিন।</div>
+  <div><b>নাম, মোবাইল ও ঠিকানা দিন</b>জেলা ও থানা ঠিকমতো লিখুন, ডেলিভারি চার্জ নিজে থেকেই যোগ হবে।</div>
+  <div><b>বই হাতে পেয়ে টাকা দিন</b>কুরিয়ার আপনার ঠিকানায় বই পৌঁছে দেবে, তখন টাকা পরিশোধ করবেন।</div>
+ </div>
+ <div class="pgl-warn"><strong class="t">অর্ডার করার আগে গুরুত্বপূর্ণ অনুরোধ</strong>{$note}</div>
+</section>
+
+<section class="pgl-sec pgl-faq">
+ <h2 class="pgl-h" style="margin-bottom:16px">সাধারণ প্রশ্ন</h2>
+ <details><summary>আমি চাইনিজের কিছুই জানি না, এই বই দিয়ে কি শুরু করতে পারব?</summary><p>কম্বোটা নতুনদের কথা মাথায় রেখেই সাজানো, আর দুটো বইয়েই বাংলা আছে। নিশ্চিত হতে চাইলে ওপরের "একটু পড়ে দেখুন" বাটনে চাপ দিয়ে ভেতরের পাতা দেখে নিন।</p></details>
+ <details><summary>টাকা কখন দিতে হবে?</summary><p>ক্যাশ অন ডেলিভারি। বই হাতে পাওয়ার পর কুরিয়ারকে টাকা দেবেন। আগে কোনো টাকা পাঠাতে হবে না।</p></details>
+ <details><summary>ডেলিভারি চার্জ কত?</summary><p>ঢাকা সিটির ভেতরে ৬০ টাকা, ঢাকার বাইরে ১২০ টাকা। চেকআউটে জেলা দিলে চার্জ নিজে থেকেই হিসাব হয়ে যাবে।</p></details>
+ <details><summary>কম্বোতে কয়টা বই থাকবে?</summary><p>দুটো বই: আমার প্রথম চাইনিজ বই (৪০৬ পৃষ্ঠা) আর পথকলি চাইনিজ (১৯২ পৃষ্ঠা)।</p></details>
+ <details><summary>অর্ডার নিয়ে প্রশ্ন থাকলে কোথায় যোগাযোগ করব?</summary><p>কল বা WhatsApp করুন: <a href="https://wa.me/8801516549037" target="_blank" rel="noopener">01516549037</a></p></details>
+ <details><summary>বইয়ের বিস্তারিত তথ্য</summary>
+  <table class="pgl-info" style="margin-bottom:15px"><tr><th></th><th>আমার প্রথম চাইনিজ বই</th><th>পথকলি চাইনিজ</th></tr>
+  <tr><td>লেখক</td><td>ড. মোহাম্মদ সাদী</td><td>ড. মোহাম্মদ সাদী</td></tr>
+  <tr><td>প্রকাশনী</td><td>ইদাই ইলু প্রকাশনী</td><td>ইদাই ইলু প্রকাশনী</td></tr>
+  <tr><td>ISBN</td><td>978-984-36-0543-6</td><td>978-984-36-0674-7</td></tr>
+  <tr><td>সংস্করণ</td><td>৩য়</td><td>১ম</td></tr>
+  <tr><td>পৃষ্ঠা</td><td>৪০৬</td><td>১৯২</td></tr>
+  <tr><td>ভাষা</td><td>বাংলা, চাইনিজ, ইংলিশ</td><td>বাংলা, চাইনিজ</td></tr></table></details>
+</section>
+
+<div class="pgl-final">
+ <img src="{$cm}" alt="কম্বো" loading="lazy">
+ <div><h3>চাইনিজ শেখা আজই শুরু করুন</h3><p>দুটো বই একসাথে, ক্যাশ অন ডেলিভারি</p><div class="pr">৳{$price}<del>৳{$reg}</del></div></div>
+ <a class="pgl-btn pgl-order" href="{$CO}?add-to-cart={$PID}">অর্ডার করুন</a>
+</div>
+
+<div class="pgl-sticky" id="pgl-sticky"><div class="t"><b>৳{$price}</b><small>২টি বই · ক্যাশ অন ডেলিভারি</small></div><a class="pgl-btn pgl-order" href="{$CO}?add-to-cart={$PID}">অর্ডার করুন</a></div>
+</div>
+<script>
+(function(){
+ document.addEventListener('click',function(e){
+  var o=e.target.closest('.pgl-order');
+  if(o){var b=document.querySelector('form.cart .bwb-order-btn'); if(b){e.preventDefault(); o.textContent='অপেক্ষা করুন...'; b.click();} return;}
+  var k=e.target.closest('.pgl-peek');
+  if(k){var m=document.getElementById('wppp-modal'),ob=document.getElementById('wppp-open-modal'); if(m&&ob){e.preventDefault(); m.setAttribute('data-pdf',k.dataset.pdf); ob.click();} else {window.open(k.dataset.pdf,'_blank');}}
+ });
+ var s=document.getElementById('pgl-sticky'), f=document.querySelector('.pgl-hero form.cart'), fin=document.querySelector('.pgl-final');
+ if(s&&f&&'IntersectionObserver' in window){
+  var heroIn=true, finIn=false, up=function(){s.classList.toggle('on',!heroIn&&!finIn);};
+  new IntersectionObserver(function(es){heroIn=es[0].isIntersecting||es[0].boundingClientRect.top>0;up();}).observe(f);
+  if(fin) new IntersectionObserver(function(es){finIn=es[0].isIntersecting;up();}).observe(fin);
+ }
+})();
+</script>
+HTML;
+
+$rid = function(){ return substr(md5(uniqid('',true)),0,7); };
+$w = function($type,$settings=[]) use ($rid){ return ['id'=>$rid(),'elType'=>'widget','widgetType'=>$type,'settings'=>$settings?:new stdClass,'elements'=>[]]; };
+$html = fn($h)=>$w('html',['html'=>$h]);
+$con = function($cls,$els,$extra=[]) use ($rid){ return ['id'=>$rid(),'elType'=>'container','isInner'=>false,'settings'=>array_merge(['css_classes'=>$cls],$extra),'elements'=>$els]; };
+
+$data = [
+ $con('pgl-page pgl-hero',[
+   $con('pgl-hero-l',[ $w('woocommerce-product-images') ],['content_width'=>'full']),
+   $con('pgl-hero-r',[
+     $html($badge),
+     $w('woocommerce-product-title',['header_size'=>'h1']),
+     $html($sub),
+     $w('woocommerce-product-price'),
+     $html($pills),
+     $w('woocommerce-product-add-to-cart'),
+     $w('shortcode',['shortcode'=>'[pdf_preview_button]']),
+     $html($trust),
+   ],['content_width'=>'full','flex_direction'=>'column']),
+ ],['flex_direction'=>'row']),
+ $con('pgl-body',[ $html($body) ],['content_width'=>'full']),
+ $con('pgl-body pgl-up',[ $w('shortcode',['shortcode'=>'[pg_upsell ids="3439,1153,1162,1139" title="চাইনিজ শেখা আরও এগিয়ে নিতে সাথে নিন" note="এই কম্বো যারা কিনেছেন, তাদের অনেকে এই বইগুলোও সাথে নিয়েছেন। একটা চাপেই অর্ডারে যোগ হয়ে যাবে।"]']) ],['content_width'=>'full']),
+ $con('pgl-body',[ $html($body2) ],['content_width'=>'full']),
+];
+
+// tag used as the template condition
+$t = term_exists('pg-landing','product_tag'); if(!$t) $t = wp_insert_term('Landing design','product_tag',['slug'=>'pg-landing']);
+$tid = (int)(is_array($t)?$t['term_id']:$t);
+wp_set_object_terms($PID,[$tid],'product_tag',true);
+
+$existing = get_posts(['post_type'=>'elementor_library','title'=>'Combo product page','post_status'=>'any','fields'=>'ids','numberposts'=>1]);
+$tpl = $existing ? $existing[0] : wp_insert_post(['post_type'=>'elementor_library','post_status'=>'publish','post_title'=>'Combo product page']);
+wp_set_object_terms($tpl,'product','elementor_library_type');
+foreach(['_elementor_page_settings','_wp_page_template'] as $k){ $v=get_post_meta(39,$k,true); if($v!=='') update_post_meta($tpl,$k,$v); }
+update_post_meta($tpl,'_elementor_template_type','product');
+update_post_meta($tpl,'_elementor_edit_mode','builder');
+update_post_meta($tpl,'_elementor_version',defined('ELEMENTOR_VERSION')?ELEMENTOR_VERSION:'3.0.0');
+if(defined('ELEMENTOR_PRO_VERSION')) update_post_meta($tpl,'_elementor_pro_version',ELEMENTOR_PRO_VERSION);
+update_post_meta($tpl,'_elementor_data',wp_slash(wp_json_encode($data)));
+update_post_meta($tpl,'_elementor_conditions',['include/product/in_product_tag/'.$tid]);
+delete_post_meta($tpl,'_elementor_css');
+\ElementorPro\Modules\ThemeBuilder\Module::instance()->get_conditions_manager()->get_cache()->regenerate();
+if(class_exists('\Elementor\Plugin')) \Elementor\Plugin::$instance->files_manager->clear_cache();
+do_action('litespeed_purge_all');
+return ['tpl'=>$tpl,'tag'=>$tid,'sold'=>$sold,'note_len'=>strlen($note),'c1'=>$c1,'c2'=>$c2];
