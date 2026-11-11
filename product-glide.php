@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Product Glide - All-in-One WooCommerce Courier & Order Hub
  * Description:       Fast, mobile-friendly order dashboard with Steadfast and Carrybee courier, fraud check, invoice printing, package builder, WhatsApp Cloud API, profit tracking and screenshot order creator. Runs natively inside WordPress (no external REST round-trips for order work).
- * Version:           1.16.1
+ * Version:           1.17.0
  * Author:            Md Sajedul Islam
  * Text Domain:       product-glide
  * Requires PHP:      7.4
@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PG_VERSION', '1.16.1' );
+define( 'PG_VERSION', '1.17.0' );
 define( 'PG_DB_VERSION', '1.4.0' );
 define( 'PG_FILE', __FILE__ );
 define( 'PG_DIR', plugin_dir_path( __FILE__ ) );
@@ -41,6 +41,7 @@ require_once PG_DIR . 'includes/class-pg-address.php';
 require_once PG_DIR . 'includes/class-pg-wa-inbox.php';
 require_once PG_DIR . 'includes/class-pg-wa-setup.php';
 require_once PG_DIR . 'includes/class-pg-confirm.php';
+require_once PG_DIR . 'includes/class-pg-upsell.php';
 require_once PG_DIR . 'includes/class-pg-admin.php';
 require_once PG_DIR . 'includes/class-pg-app.php';
 require_once PG_DIR . 'includes/class-pg-team.php';
@@ -105,6 +106,7 @@ add_action(
 		PG_WA_Inbox::init();
 		PG_WA_Setup::init();
 		PG_Confirm::init();
+		PG_Upsell::init();
 		PG_Settings::init();
 		PG_Admin::init();
 		PG_Team::init();
