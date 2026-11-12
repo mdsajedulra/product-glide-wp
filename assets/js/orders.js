@@ -679,6 +679,8 @@
 		$bar.hidden = n === 0;
 		document.getElementById('pg-bottom-count').textContent = n + ' selected';
 		document.getElementById('pg-sel-count').textContent = n;
+		var un = document.querySelector('[data-bulk="unprint"]');
+		if (un) { un.hidden = state.status !== 'printed'; }
 		var all = document.getElementById('pg-select-all');
 		all.checked = state.order.length > 0 && state.order.every(function (id) { return state.selected.has(id); });
 	}
@@ -727,6 +729,17 @@
 		if (act === 'clear') { state.selected.clear(); renderList(); }
 		if (act === 'print') { window.open(A.printUrl(Array.from(state.selected)), '_blank'); }
 		if (act === 'sf') { bulkSend(); }
+		if (act === 'unprint') {
+			var ids = Array.from(state.selected);
+			A.busy(b, true);
+			A.ajax('pg_print_mark', { ids: ids, mode: 'undo' }).then(function (d) {
+				A.busy(b, false);
+				A.toast((d && d.count ? d.count : 0) + ' order(s) back in Ready to print', 'ok');
+				state.selected.clear();
+				load(true);
+				if (typeof refreshKpis === 'function') { refreshKpis(); }
+			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
+		}
 	});
 
 	$list.addEventListener('change', function (e) {

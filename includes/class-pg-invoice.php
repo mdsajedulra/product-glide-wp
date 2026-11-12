@@ -9,6 +9,124 @@ class PG_Invoice {
 
 	public static function init() {
 		add_action( 'admin_post_pg_print', array( __CLASS__, 'render' ) );
+		add_action( 'wp_ajax_pg_print_mark', array( __CLASS__, 'ajax_mark' ) );
+	}
+
+	/**
+	 * Mark orders as printed: "Ready to print" orders move to "Printed".
+	 */
+	public static function mark_printed( array $ids ) {
+		$n = 0;
+		foreach ( $ids as $id ) {
+			$o = wc_get_order( $id );
+			if ( ! $o || 'shop_order' !== $o->get_type() ) {
+				continue;
+			}
+			PG_Team::log( $o->get_id(), 'printed', count( $ids ) > 1 ? 'Bulk print (' . count( $ids ) . ')' : '' );
+			$o->update_meta_data( '_pg_printed', time() );
+			$o->save_meta_data();
+			if ( 'courier_sent' === $o->get_status() ) {
+				PG_Team::$quiet = true; // already logged as "printed"
+				$o->update_status( 'printed', __( 'Courier slip printed.', 'product-glide' ) );
+				PG_Team::$quiet = false;
+			}
+			$n++;
+		}
+		return $n;
+	}
+
+	/**
+	 * Undo: "Printed" orders go back to "Ready to print".
+	 */
+	public static function unmark_printed( array $ids ) {
+		$n = 0;
+		foreach ( $ids as $id ) {
+			$o = wc_get_order( $id );
+			if ( ! $o || 'printed' !== $o->get_status() ) {
+				continue;
+			}
+			$o->delete_meta_data( '_pg_printed' );
+			$o->save_meta_data();
+			PG_Team::log( $o->get_id(), 'status', 'Back to Ready to print (not printed)' );
+			PG_Team::$quiet = true;
+			$o->update_status( 'courier_sent', __( 'Moved back to Ready to print (not printed).', 'product-glide' ) );
+			PG_Team::$quiet = false;
+			$n++;
+		}
+		return $n;
+	}
+
+	public static function ajax_mark() {
+		check_ajax_referer( 'pg_ajax', 'nonce' );
+		if ( ! PG_App::can() ) {
+			wp_send_json_error( array( 'message' => 'Not allowed' ), 403 );
+		}
+		$ids  = isset( $_POST['ids'] ) ? array_slice( array_filter( array_map( 'absint', (array) wp_unslash( $_POST['ids'] ) ) ), 0, 300 ) : array(); // phpcs:ignore
+		$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : 'printed';
+		$n    = 'undo' === $mode ? self::unmark_printed( $ids ) : self::mark_printed( $ids );
+		wp_send_json_success( array( 'count' => $n ) );
+	}
+
+	/**
+	 * After the print dialog closes, ask whether the paper really came out.
+	 * Nothing changes until "Yes" is pressed.
+	 */
+	private static function confirm_ui( array $orders ) {
+		$ids = array_map( function ( $o ) { return $o->get_id(); }, $orders );
+		$cfg = array(
+			'ajax'  => admin_url( 'admin-ajax.php' ),
+			'nonce' => wp_create_nonce( 'pg_ajax' ),
+			'ids'   => $ids,
+		);
+		?>
+<style>
+.pgpm-bg{position:fixed;inset:0;background:rgba(17,24,39,.55);display:none;align-items:center;justify-content:center;z-index:99;font-family:'Noto Sans Bengali',Arial,sans-serif}
+.pgpm-bg.on{display:flex}
+.pgpm{background:#fff;border-radius:14px;padding:22px 22px 18px;width:min(92vw,400px);box-shadow:0 20px 50px rgba(0,0,0,.3);text-align:center}
+.pgpm h3{margin:0 0 6px;font-size:19px;color:#111}
+.pgpm p{margin:0 0 16px;color:#4b5563;font-size:14px;line-height:1.5}
+.pgpm .r{display:flex;gap:10px}
+.pgpm button{flex:1;border:0;border-radius:10px;padding:11px 10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
+.pgpm .y{background:#4f46e5;color:#fff}.pgpm .n{background:#f3f4f6;color:#111}
+.pgpm .ok{color:#15803d;font-weight:700;font-size:15px}
+.pg-print-bar .pgpm-state{font-weight:400;opacity:.85;margin-left:10px}
+.pg-print-bar .pgpm-mark{background:#4f46e5;color:#fff;border:0;border-radius:6px;padding:7px 12px;cursor:pointer}
+@media print{.pgpm-bg{display:none!important}}
+</style>
+<div class="pgpm-bg" id="pgpm"><div class="pgpm">
+	<h3>প্রিন্ট হয়েছে?</h3>
+	<p><?php echo esc_html( class_exists( 'PG_Product_Page' ) ? PG_Product_Page::bn( count( $ids ) ) : count( $ids ) ); ?>টা অর্ডার। কাগজ বের হয়ে থাকলে "হ্যাঁ" চাপুন, অর্ডারগুলো Printed-এ চলে যাবে। বাতিল করে থাকলে "না" চাপুন, কিছুই বদলাবে না।</p>
+	<div class="r"><button class="n" type="button">না, প্রিন্ট হয়নি</button><button class="y" type="button">হ্যাঁ, প্রিন্ট হয়েছে</button></div>
+</div></div>
+<script>
+(function () {
+	var C = <?php echo wp_json_encode( $cfg ); ?>, bg = document.getElementById('pgpm'), done = false;
+	var bar = document.querySelector('.pg-print-bar span');
+	var mark = document.createElement('button'); mark.type = 'button'; mark.className = 'pgpm-mark'; mark.textContent = '✓ Printed হিসেবে চিহ্নিত করুন';
+	var st = document.createElement('em'); st.className = 'pgpm-state'; st.textContent = 'এখনো Printed করা হয়নি';
+	if (bar) { bar.appendChild(mark); document.querySelector('.pg-print-bar strong').appendChild(st); }
+	function save() {
+		if (done) { return; }
+		var fd = new FormData(); fd.append('action', 'pg_print_mark'); fd.append('nonce', C.nonce); fd.append('mode', 'printed');
+		C.ids.forEach(function (i) { fd.append('ids[]', i); });
+		bg.querySelector('.r').innerHTML = '<span>সেভ হচ্ছে...</span>';
+		fetch(C.ajax, { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+			if (!d || !d.success) { throw 0; }
+			done = true; st.textContent = '✓ Printed-এ চলে গেছে'; mark.remove();
+			bg.querySelector('.r').innerHTML = '<span class="ok">✓ Printed-এ চলে গেছে। ট্যাবটা বন্ধ করতে পারেন।</span>';
+			setTimeout(function () { bg.classList.remove('on'); }, 1600);
+		}).catch(function () {
+			bg.querySelector('.r').innerHTML = '<span style="color:#b91c1c">সেভ হয়নি। ওপরের "Printed হিসেবে চিহ্নিত করুন" বাটন চাপুন।</span>';
+			setTimeout(function () { bg.classList.remove('on'); }, 2500);
+		});
+	}
+	bg.querySelector('.y').addEventListener('click', save);
+	bg.querySelector('.n').addEventListener('click', function () { bg.classList.remove('on'); });
+	mark.addEventListener('click', function () { bg.classList.add('on'); save(); });
+	window.addEventListener('afterprint', function () { if (!done) { setTimeout(function () { bg.classList.add('on'); }, 200); } });
+})();
+</script>
+		<?php
 	}
 
 	public static function print_url( array $ids ) {
@@ -159,15 +277,7 @@ class PG_Invoice {
 		foreach ( $ids as $id ) {
 			$o = wc_get_order( $id );
 			if ( $o && 'shop_order' === $o->get_type() ) {
-				$orders[] = $o;
-				PG_Team::log( $o->get_id(), 'printed', count( $ids ) > 1 ? 'Bulk print (' . count( $ids ) . ')' : '' );
-				$o->update_meta_data( '_pg_printed', time() );
-				$o->save_meta_data();
-				if ( 'courier_sent' === $o->get_status() ) {
-					PG_Team::$quiet = true; // already logged as "printed"
-					$o->update_status( 'printed', __( 'Courier slip printed.', 'product-glide' ) );
-					PG_Team::$quiet = false;
-				}
+				$orders[] = $o; // marked as printed only when the user confirms (see confirm_ui)
 			}
 		}
 		$tpls = self::templates();
@@ -295,6 +405,7 @@ class PG_Invoice {
 	Promise.all([wait, document.fonts && document.fonts.ready ? document.fonts.ready : 1]).then(go);
 })();
 </script>
+<?php self::confirm_ui( $orders ); ?>
 </body>
 </html>
 		<?php
@@ -438,6 +549,7 @@ foreach ( $orders as $o ) :
 	Promise.all([wait, document.fonts && document.fonts.ready ? document.fonts.ready : 1]).then(go);
 })();
 </script>
+<?php self::confirm_ui( $orders ); ?>
 </body>
 </html>
 		<?php
