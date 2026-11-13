@@ -672,6 +672,35 @@
 		if (!k.length) { bulkBtn.style.display = 'none'; } else if (k.length === 1) { bulkBtn.textContent = 'Send to ' + COURIERS[k[0]]; }
 	})();
 
+
+	// Moving orders between "Ready to print" and "Printed" always asks first, so a stray click changes nothing.
+	function askPrintMove(btn, mode) {
+		var ids = Array.from(state.selected);
+		if (!ids.length) { return; }
+		var undo = mode === 'undo';
+		var nums = ids.map(function (id) { var o = state.orders[id]; return '#' + (o && o.number ? o.number : id); });
+		var m = A.modal(undo ? 'Back to Ready to print?' : 'Mark as printed?',
+			'<p style="font-size:15px;margin:0 0 8px"><b>' + ids.length + ' order' + (ids.length > 1 ? 's' : '') + '</b> will move ' +
+			(undo ? 'from <b>Printed</b> back to <b>Ready to print</b>.' : 'from <b>Ready to print</b> to <b>Printed</b>.') + '</p>' +
+			'<p class="pg-muted" style="margin:0 0 14px;max-height:90px;overflow:auto">' + A.esc(nums.join(', ')) + '</p>' +
+			'<div style="display:flex;gap:8px;justify-content:flex-end">' +
+				'<button type="button" class="pg-btn" data-close>Cancel</button>' +
+				'<button type="button" class="pg-btn pg-btn-primary" data-yes>' + (undo ? 'Yes, move back ' + ids.length : 'Yes, mark ' + ids.length + ' printed') + '</button>' +
+			'</div>', { center: true });
+		var yes = m.body.querySelector('[data-yes]');
+		setTimeout(function () { var c = m.body.querySelector('[data-close]'); if (c) { c.focus(); } }, 30);
+		yes.addEventListener('click', function () {
+			A.busy(yes, true);
+			A.ajax('pg_print_mark', { ids: ids, mode: mode }).then(function (d) {
+				m.close();
+				A.toast((d && d.count ? d.count : 0) + (undo ? ' order(s) back in Ready to print' : ' order(s) marked printed'), 'ok');
+				state.selected.clear();
+				load(true);
+				if (typeof refreshKpis === 'function') { refreshKpis(); }
+			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(yes, false); });
+		});
+	}
+
 	/* ---------- Selection / bulk bar ---------- */
 
 	function updateBar() {
@@ -680,7 +709,9 @@
 		document.getElementById('pg-bottom-count').textContent = n + ' selected';
 		document.getElementById('pg-sel-count').textContent = n;
 		var un = document.querySelector('[data-bulk="unprint"]');
-		if (un) { un.hidden = state.status !== 'printed'; }
+		if (un) { un.style.display = state.status === 'printed' ? '' : 'none'; }
+		var mp = document.querySelector('[data-bulk="markprinted"]');
+		if (mp) { mp.style.display = state.status === 'courier_sent' ? '' : 'none'; }
 		var all = document.getElementById('pg-select-all');
 		all.checked = state.order.length > 0 && state.order.every(function (id) { return state.selected.has(id); });
 	}
@@ -729,17 +760,7 @@
 		if (act === 'clear') { state.selected.clear(); renderList(); }
 		if (act === 'print') { window.open(A.printUrl(Array.from(state.selected)), '_blank'); }
 		if (act === 'sf') { bulkSend(); }
-		if (act === 'unprint') {
-			var ids = Array.from(state.selected);
-			A.busy(b, true);
-			A.ajax('pg_print_mark', { ids: ids, mode: 'undo' }).then(function (d) {
-				A.busy(b, false);
-				A.toast((d && d.count ? d.count : 0) + ' order(s) back in Ready to print', 'ok');
-				state.selected.clear();
-				load(true);
-				if (typeof refreshKpis === 'function') { refreshKpis(); }
-			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
-		}
+		if (act === 'unprint' || act === 'markprinted') { askPrintMove(b, act === 'unprint' ? 'undo' : 'printed'); }
 	});
 
 	$list.addEventListener('change', function (e) {

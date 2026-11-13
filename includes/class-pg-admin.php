@@ -239,7 +239,8 @@ class PG_Admin {
 		<div class="pg-bottom-bar" id="pg-bottom-bar" hidden>
 			<span id="pg-bottom-count"></span>
 			<button class="pg-btn pg-btn-ghost" data-bulk="clear"><?php esc_html_e( 'Clear', 'product-glide' ); ?></button>
-			<button class="pg-btn pg-btn-ghost" data-bulk="unprint" hidden title="Printed by mistake? Put the selected orders back in Ready to print">↺ <?php esc_html_e( 'Back to Ready to print', 'product-glide' ); ?></button>
+			<button class="pg-btn pg-btn-ghost" data-bulk="markprinted" style="display:none" title="Already printed these? Move the selected orders to Printed">✓ <?php esc_html_e( 'Mark printed', 'product-glide' ); ?></button>
+			<button class="pg-btn pg-btn-ghost" data-bulk="unprint" style="display:none" title="Printed by mistake? Put the selected orders back in Ready to print">↺ <?php esc_html_e( 'Back to Ready to print', 'product-glide' ); ?></button>
 			<button class="pg-btn pg-btn-ghost" data-bulk="sf"><?php esc_html_e( 'Send to courier', 'product-glide' ); ?></button>
 			<button class="pg-btn pg-btn-primary" data-bulk="print"><?php esc_html_e( 'Print Selected Invoices', 'product-glide' ); ?></button>
 		</div>
