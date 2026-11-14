@@ -1,0 +1,325 @@
+<?php
+/**
+ * Second pass for finding the thana in a typed address, used when the main
+ * matcher finds no thana.
+ *
+ * 1. Spelling-tolerant names: "Dhanmandi" = Dhanmondi, "Gopalgonj sador" =
+ *    Gopalganj Sadar, "Dokkin surma" = Dakshinsurma, "মিরসরাই" = "মীরসরাই".
+ * 2. "Sadar" / "Kotwali" with a known district = that district's Sadar thana.
+ * 3. Learned areas: every order saved with a district + thana teaches which
+ *    words (area, road, market names) belong to which thana, so local names
+ *    like "Mogbazar" or "Seroil" are found once the shop has seen them.
+ *
+ * @package ProductGlide
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+class PG_Thana_Finder {
+
+	const OPT     = 'pg_addr_learn';
+	const MAX_KEY = 6000;
+
+	private static $names = null;
+
+	public static function init() {
+		add_action( 'pg_addr_learn_cron', array( __CLASS__, 'rebuild' ) );
+		if ( ! wp_next_scheduled( 'pg_addr_learn_cron' ) ) {
+			wp_schedule_event( time() + 600, 'daily', 'pg_addr_learn_cron' );
+		}
+	}
+
+	/* ---------- normalising ---------- */
+
+	private static function fold( $s ) {
+		$s = mb_strtolower( (string) $s, 'UTF-8' );
+		$s = str_replace( array( "\u{09AF}\u{09BC}", "\u{09A1}\u{09BC}", "\u{09A2}\u{09BC}" ), array( "\u{09DF}", "\u{09DC}", "\u{09DD}" ), $s );
+		return strtr( $s, array( '০' => '0', '১' => '1', '২' => '2', '৩' => '3', '৪' => '4', '৫' => '5', '৬' => '6', '৭' => '7', '৮' => '8', '৯' => '9' ) );
+	}
+
+	private static function is_bn( $w ) {
+		return (bool) preg_match( '/[\x{0980}-\x{09FF}]/u', $w );
+	}
+
+	/** Bangla spellings people mix up: ী/ি, ূ/ু, শ/ষ/স, ণ/ন, ড়/র, chandrabindu, hasanta. */
+	private static function bn_key( $w ) {
+		$w = strtr(
+			$w,
+			array(
+				'ী' => 'ি', 'ূ' => 'ু', 'ঁ' => '', 'ণ' => 'ন', 'ষ' => 'স', 'শ' => 'স', 'ড়' => 'র', 'ঢ়' => 'র',
+				'য়' => 'য', 'ঙ' => 'ং', 'ৈ' => 'ে', 'ৌ' => 'ো', '্' => '', 'ৎ' => 'ত', '‌' => '', '‍' => '',
+			)
+		);
+		$w = preg_replace( '/(.)\1+/u', '$1', $w );
+		return mb_strlen( $w ) >= 3 ? 'n:' . $w : '';
+	}
+
+	/** Latin consonant skeleton: sadar/sador/sodor → s+dr, gonj/ganj, dhanmandi/dhanmondi. */
+	private static function lat_key( $w ) {
+		$w = preg_replace( '/[^a-z]/', '', $w );
+		if ( strlen( $w ) < 3 ) {
+			return '';
+		}
+		$w = str_replace( array( 'ksh', 'kkh', 'kh', 'ph', 'sh', 'ch', 'th', 'dh', 'bh', 'gh', 'jh' ), array( 'k', 'k', 'k', 'f', 's', 'c', 't', 'd', 'b', 'g', 'j' ), $w );
+		$f = $w[0];
+		$r = substr( $w, 1 );
+		$r = str_replace( array( 'h', 'w', 'y' ), '', $r );
+		$r = preg_replace( '/[aeiou]/', '', $r );
+		$r = strtr( $r, array( 'z' => 'j', 'q' => 'k', 'v' => 'b', 'x' => 'ks' ) );
+		$r = preg_replace( '/(.)\1+/', '$1', $r );
+		$r = preg_replace( '/ks/', 'k', $r );
+		$f = in_array( $f, array( 'a', 'e', 'i', 'o', 'u' ), true ) ? 'V' : strtr( $f, array( 'z' => 'j', 'q' => 'k', 'v' => 'b', 'w' => 'V', 'y' => 'V' ) );
+		return strlen( $r ) >= 2 ? 'l:' . $f . $r : '';
+	}
+
+	private static function key( $w ) {
+		return self::is_bn( $w ) ? self::bn_key( $w ) : self::lat_key( $w );
+	}
+
+	private static function words( $text ) {
+		$t = self::fold( $text );
+		$t = preg_replace( '/[^\p{L}\p{M}\s]+/u', ' ', $t ); // digits, punctuation, hyphens, dots
+		return array_values( array_filter( preg_split( '/\s+/u', trim( $t ) ), 'strlen' ) );
+	}
+
+	/** Every 1–3 word run, joined without spaces ("chawk bazar" → "chawkbazar"). */
+	private static function grams( $text ) {
+		$w   = self::words( $text );
+		$out = array();
+		$n   = count( $w );
+		for ( $i = 0; $i < $n; $i++ ) {
+			$g = '';
+			for ( $k = 0; $k < 3 && $i + $k < $n; $k++ ) {
+				$g .= $w[ $i + $k ];
+				$out[] = array( $g, $k + 1 );
+			}
+		}
+		return $out;
+	}
+
+	/* ---------- 1 + 2: names ---------- */
+
+	private static function names() {
+		if ( null !== self::$names ) {
+			return self::$names;
+		}
+		$map = array();
+		foreach ( PG_Address::data() as $di => $d ) {
+			foreach ( $d['u'] as $ti => $u ) {
+				foreach ( array( $u[0], $u[1] ) as $name ) {
+					$k = self::key( str_replace( ' ', '', self::fold( $name ) ) );
+					if ( $k ) {
+						$map[ $k ][ $di . ':' . $ti ] = true;
+					}
+				}
+			}
+		}
+		return self::$names = $map;
+	}
+
+	private static function sadar_of( $di ) {
+		$d = PG_Address::data()[ $di ] ?? null;
+		if ( ! $d ) {
+			return null;
+		}
+		$sadar = null;
+		foreach ( $d['u'] as $ti => $u ) {
+			if ( preg_match( '/kotwali|kotowali/i', $u[0] ) ) {
+				return null; // the district has its own Kotwali thana: do not guess
+			}
+			if ( null === $sadar && preg_match( '/\bsadar$/i', $u[0] ) && ! preg_match( '/south|north|dakshin/i', $u[0] ) ) {
+				$sadar = $ti;
+			}
+		}
+		return $sadar;
+	}
+
+	/* ---------- 3: learned ---------- */
+
+	private static function learned() {
+		$l = get_option( self::OPT, array() );
+		return is_array( $l ) && isset( $l['k'] ) ? $l['k'] : array();
+	}
+
+	private static function learn_keys( $text ) {
+		$stop = array( 'road', 'house', 'holding', 'flat', 'floor', 'block', 'sector', 'lane', 'village', 'vill', 'post', 'office', 'near', 'area', 'thana', 'upazila', 'district', 'zilla', 'city', 'new', 'east', 'west', 'north', 'south', 'sadar', 'sador', 'sodor', 'bazar', 'para', 'bari', 'road', 'mor', 'more', 'school', 'college', 'madrasa', 'mosjid', 'masjid', 'বাড়ি', 'বাড়ী', 'রোড', 'গ্রাম', 'থানা', 'জেলা', 'পোস্ট', 'বাজার', 'উপজেলা', 'মোড়', 'পাড়া', 'বাসা', 'সদর', 'স্কুল', 'মসজিদ', 'মাদ্রাসা' );
+		$keys = array();
+		foreach ( self::grams( $text ) as $g ) {
+			if ( 1 === $g[1] && in_array( $g[0], $stop, true ) ) {
+				continue;
+			}
+			$k = self::key( $g[0] );
+			if ( $k && $g[1] <= 2 ) {
+				$keys[ $k ] = $g[1];
+			}
+		}
+		return $keys;
+	}
+
+	/** Remember which words went with which thana (called when an order is saved with a thana). */
+	public static function learn( $text, $di, $ti ) {
+		if ( null === $di || null === $ti || '' === trim( (string) $text ) ) {
+			return;
+		}
+		$l = get_option( self::OPT, array() );
+		if ( ! is_array( $l ) || ! isset( $l['k'] ) ) {
+			$l = array( 'k' => array() );
+		}
+		$t = $di . ':' . $ti;
+		foreach ( array_keys( self::learn_keys( $text ) ) as $k ) {
+			$l['k'][ $k ][ $t ] = ( $l['k'][ $k ][ $t ] ?? 0 ) + 1;
+		}
+		if ( count( $l['k'] ) > self::MAX_KEY ) {
+			uasort( $l['k'], function ( $a, $b ) { return array_sum( $b ) - array_sum( $a ); } );
+			$l['k'] = array_slice( $l['k'], 0, self::MAX_KEY, true );
+		}
+		update_option( self::OPT, $l, false );
+	}
+
+	/** Relearn from every saved order that has a district and thana. */
+	public static function rebuild() {
+		global $wpdb;
+		$addr = $wpdb->prefix . 'wc_order_addresses';
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $addr ) ) !== $addr ) { // phpcs:ignore
+			return 0;
+		}
+		$rows   = $wpdb->get_results( "SELECT address_1, address_2, city, state FROM {$addr} WHERE address_type = 'billing' AND city <> '' AND state <> '' ORDER BY order_id DESC LIMIT 20000", ARRAY_A ); // phpcs:ignore
+		$g      = PG_Address::geo();
+		$states = function_exists( 'WC' ) && WC()->countries ? (array) WC()->countries->get_states( 'BD' ) : array();
+		$dc     = array();
+		$k      = array();
+		$n      = 0;
+		foreach ( $rows as $r ) {
+			$sn = $states[ $r['state'] ] ?? '';
+			if ( ! array_key_exists( $sn, $dc ) ) {
+				$dc[ $sn ] = $sn ? $g::district_from_wc_state( $sn ) : null;
+			}
+			$di = $dc[ $sn ];
+			if ( null === $di ) {
+				continue;
+			}
+			$ti = $g::resolve_thana( $di, $r['city'] );
+			if ( null === $ti ) {
+				continue;
+			}
+			$t = $di . ':' . $ti;
+			foreach ( array_keys( self::learn_keys( trim( $r['address_1'] . ' ' . $r['address_2'] ) ) ) as $key ) {
+				$k[ $key ][ $t ] = ( $k[ $key ][ $t ] ?? 0 ) + 1;
+			}
+			$n++;
+		}
+		if ( count( $k ) > self::MAX_KEY ) {
+			uasort( $k, function ( $a, $b ) { return array_sum( $b ) - array_sum( $a ); } );
+			$k = array_slice( $k, 0, self::MAX_KEY, true );
+		}
+		update_option( self::OPT, array( 'k' => $k, 'built' => time(), 'orders' => $n ), false );
+		return $n;
+	}
+
+	/* ---------- lookup ---------- */
+
+	/**
+	 * @param string   $text Address text.
+	 * @param int|null $di   District already found, if any.
+	 * @return array|null [district, thana]
+	 */
+	public static function find( $text, $di = null ) {
+		$names = self::names();
+		$cands = array();
+		foreach ( self::grams( $text ) as $g ) {
+			$k = self::key( $g[0] );
+			if ( $k && isset( $names[ $k ] ) ) {
+				foreach ( array_keys( $names[ $k ] ) as $t ) {
+					$cands[ $t ] = max( $cands[ $t ] ?? 0, $g[1] );
+				}
+			}
+		}
+		$pick = self::choose( $cands, $di );
+		if ( $pick ) {
+			return $pick;
+		}
+
+		// "Sadar" / "Kotwali" with a known district.
+		if ( null !== $di && preg_match( '/\b(sadar|sador|sodor|sader|kotwali|kotowali|kotoali)\b|সদর|কোতোয়ালি|কোতোয়ালী|কোতয়ালি/u', self::fold( $text ) ) ) {
+			$s = self::sadar_of( $di );
+			if ( null !== $s ) {
+				return array( (int) $di, (int) $s );
+			}
+		}
+
+		// Learned area words.
+		$learned = self::learned();
+		if ( $learned ) {
+			$score = array();
+			foreach ( self::learn_keys( $text ) as $k => $len ) {
+				if ( empty( $learned[ $k ] ) ) {
+					continue;
+				}
+				$c = $learned[ $k ];
+				if ( count( $c ) > 3 ) {
+					continue; // a word used all over the country says nothing
+				}
+				$tot = array_sum( $c );
+				arsort( $c );
+				$t   = key( $c );
+				$top = current( $c );
+				if ( $top / $tot < 0.8 ) {
+					continue;
+				}
+				if ( null !== $di && (int) strtok( $t, ':' ) !== (int) $di ) {
+					continue;
+				}
+				$score[ $t ] = ( $score[ $t ] ?? 0 ) + $len * min( 3, 1 + log( $top, 2 ) );
+			}
+			if ( $score ) {
+				arsort( $score );
+				$v = array_values( $score );
+				if ( count( $v ) < 2 || $v[0] >= 1.5 * $v[1] ) {
+					list( $a, $b ) = array_map( 'intval', explode( ':', key( $score ) ) );
+					return array( $a, $b );
+				}
+			}
+		}
+		return null;
+	}
+
+	private static function choose( array $cands, $di ) {
+		if ( ! $cands ) {
+			return null;
+		}
+		if ( null !== $di ) {
+			$cands = array_filter(
+				$cands,
+				function ( $t ) use ( $di ) {
+					return (int) strtok( $t, ':' ) === (int) $di;
+				},
+				ARRAY_FILTER_USE_KEY
+			);
+		}
+		if ( ! $cands ) {
+			return null;
+		}
+		arsort( $cands );
+		$best = array_keys( $cands, max( $cands ), true );
+		$ds   = array_unique( array_map( function ( $t ) { return strtok( $t, ':' ); }, $best ) );
+		if ( count( $best ) > 1 && ( null === $di || count( $ds ) > 1 ) ) {
+			// Same name in two districts and nothing else to go on: let the learned history decide.
+			$learned = self::learned();
+			$votes   = array();
+			foreach ( $learned as $c ) {
+				foreach ( $best as $t ) {
+					if ( isset( $c[ $t ] ) ) {
+						$votes[ $t ] = ( $votes[ $t ] ?? 0 ) + $c[ $t ];
+					}
+				}
+			}
+			if ( ! $votes ) {
+				return null;
+			}
+			arsort( $votes );
+			$best = array( key( $votes ) );
+		}
+		list( $a, $b ) = array_map( 'intval', explode( ':', $best[0] ) );
+		return array( $a, $b );
+	}
+}
