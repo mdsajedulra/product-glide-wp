@@ -17,6 +17,40 @@ class PG_Address {
 		add_action( 'wp_ajax_pg_geo', array( __CLASS__, 'ajax_geo' ) );
 		add_action( 'wp_ajax_pg_parse_text', array( __CLASS__, 'ajax_parse_text' ) );
 		add_action( 'wp_ajax_pg_geo_detect', array( __CLASS__, 'ajax_detect' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'wc_order_screen' ) );
+		add_action( 'woocommerce_process_shop_order_meta', array( __CLASS__, 'learn_from_admin_save' ), 60 );
+	}
+
+	/** WooCommerce's own Add / Edit order screen: fill district + thana from the typed address. */
+	public static function wc_order_screen() {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || ! in_array( $screen->id, array( 'woocommerce_page_wc-orders', 'shop_order' ), true ) || ! PG_App::can() ) {
+			return;
+		}
+		wp_enqueue_script( 'pg-wc-order-geo', PG_URL . 'assets/js/wc-order-geo.js', array( 'jquery' ), PG_VERSION, true );
+		wp_localize_script(
+			'pg-wc-order-geo',
+			'PGWCGeo',
+			array(
+				'ajax'  => admin_url( 'admin-ajax.php' ),
+				'nonce' => wp_create_nonce( 'pg_ajax' ),
+			)
+		);
+	}
+
+	/** An order saved on the WooCommerce screen with district + thana teaches the thana finder. */
+	public static function learn_from_admin_save( $order_id ) {
+		$o = wc_get_order( $order_id );
+		if ( ! $o || 'BD' !== $o->get_billing_country() || ! $o->get_billing_city() || ! class_exists( 'PG_Thana_Finder' ) ) {
+			return;
+		}
+		$g      = self::geo();
+		$states = function_exists( 'WC' ) && WC()->countries ? (array) WC()->countries->get_states( 'BD' ) : array();
+		$di     = $g::district_from_wc_state( $states[ $o->get_billing_state() ] ?? '' );
+		$ti     = null !== $di ? $g::resolve_thana( $di, $o->get_billing_city() ) : null;
+		if ( null !== $ti ) {
+			PG_Thana_Finder::learn( trim( $o->get_billing_address_1() . ' ' . $o->get_billing_address_2() ), $di, $ti );
+		}
 	}
 
 	/** Use the BD Smart Address plugin when it is there. */
@@ -221,6 +255,7 @@ class PG_Address {
 			$list[] = array(
 				'n' => $d['n'],
 				'b' => $d['b'],
+				'c' => self::wc_state( $di ),
 				'z' => self::zone( $di, null ),
 				't' => $t,
 			);
@@ -261,7 +296,9 @@ class PG_Address {
 	/** Typed address → district / thana / fee (used while typing on the New order form). */
 	public static function ajax_detect() {
 		PG_Helpers::guard_ajax();
-		wp_send_json_success( array( 'geo' => self::analyze( sanitize_text_field( PG_Helpers::post( 'address', '' ) ) ) ) );
+		$geo          = self::analyze( sanitize_text_field( PG_Helpers::post( 'address', '' ) ) );
+		$geo['state'] = self::wc_state( $geo['district'] );
+		wp_send_json_success( array( 'geo' => $geo ) );
 	}
 
 	/* ---------- Pasted message → order details ---------- */
