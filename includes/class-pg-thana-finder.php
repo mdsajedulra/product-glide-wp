@@ -253,10 +253,13 @@ class PG_Thana_Finder {
 		}
 
 		// "Sadar" / "Kotwali" with a known district.
-		if ( null !== $di && preg_match( '/\b(sadar|sador|sodor|sader|kotwali|kotowali|kotoali)\b|সদর|কোতোয়ালি|কোতোয়ালী|কোতয়ালি/u', self::fold( $text ) ) ) {
-			$s = self::sadar_of( $di );
-			if ( null !== $s ) {
-				return array( (int) $di, (int) $s );
+		if ( null !== $di ) {
+			$t = strtr( self::fold( $text ), array( "\u{09DF}" => 'য', 'ী' => 'ি', 'ো' => '', 'ও' => '' ) );
+			if ( preg_match( '/\b(sadar|sador|sodor|sader|kotwali|kotowali|kotoali|kotwaly)\b/', $t ) || preg_match( '/সদর|কোতযালি|কতযালি|কোতয়ালি/u', $t ) || false !== strpos( $t, 'কতযালি' ) ) {
+				$s = self::sadar_of( $di );
+				if ( null !== $s ) {
+					return array( (int) $di, (int) $s );
+				}
 			}
 		}
 
@@ -312,8 +315,12 @@ class PG_Thana_Finder {
 		if ( ! $cands ) {
 			return null;
 		}
-		if ( null === $di && max( $cands ) < 9 ) {
-			return null; // a short, loose match with no district to back it up is a guess
+		if ( null === $di ) {
+			$ds_all = array_unique( array_map( function ( $t ) { return strtok( $t, ':' ); }, array_keys( $cands ) ) );
+			// A short, loose match with no district to back it up is a guess, unless the name exists in one district only.
+			if ( max( $cands ) < 9 && ( count( $ds_all ) > 1 || max( $cands ) < 7 ) ) {
+				return null;
+			}
 		}
 		arsort( $cands );
 		$best = array_keys( $cands, max( $cands ), true );

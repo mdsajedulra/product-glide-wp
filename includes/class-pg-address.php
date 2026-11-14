@@ -144,7 +144,15 @@ class PG_Address {
 		} elseif ( null === $ti && $r['district'] === $di ) {
 			$ti = $r['thana'];
 		}
-		return self::describe( $di, $ti, $r['confidence'], $address );
+		$conf = $r['confidence'];
+		if ( null === $ti && '' !== $text && class_exists( 'PG_Thana_Finder' ) ) {
+			$f = PG_Thana_Finder::find( $text, $di );
+			if ( $f && ( null === $di || (int) $f[0] === (int) $di ) ) {
+				list( $di, $ti ) = $f;
+				$conf            = 'medium';
+			}
+		}
+		return self::describe( $di, $ti, $conf, $address );
 	}
 
 	public static function describe( $di, $ti, $confidence = '', $address = '' ) {
@@ -473,6 +481,9 @@ class PG_Address {
 			if ( $u ) {
 				$order->{"set_{$type}_city"}( $u[0] );
 			}
+		}
+		if ( $u && class_exists( 'PG_Thana_Finder' ) ) {
+			PG_Thana_Finder::learn( $typed, $di, $ti ); // next time this area is found by itself
 		}
 		$d = self::describe( $di, $u ? $ti : null, '', $typed );
 		$order->update_meta_data( '_bdsa_typed_address', $typed );
