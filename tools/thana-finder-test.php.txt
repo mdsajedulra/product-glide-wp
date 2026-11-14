@@ -69,7 +69,15 @@ class PG_Thana_Finder {
 		$r = preg_replace( '/(.)\1+/', '$1', $r );
 		$r = preg_replace( '/ks/', 'k', $r );
 		$f = in_array( $f, array( 'a', 'e', 'i', 'o', 'u' ), true ) ? 'V' : strtr( $f, array( 'z' => 'j', 'q' => 'k', 'v' => 'b', 'w' => 'V', 'y' => 'V' ) );
-		return strlen( $r ) >= 2 ? 'l:' . $f . $r : '';
+		return strlen( $r ) >= 3 ? 'l:' . $f . $r : '';
+	}
+
+	private static function exact_key( $w ) {
+		if ( self::is_bn( $w ) ) {
+			return '';
+		}
+		$w = preg_replace( '/[^a-z]/', '', $w );
+		return strlen( $w ) >= 4 ? 'e:' . $w : '';
 	}
 
 	private static function key( $w ) {
@@ -107,9 +115,11 @@ class PG_Thana_Finder {
 		foreach ( PG_Address::data() as $di => $d ) {
 			foreach ( $d['u'] as $ti => $u ) {
 				foreach ( array( $u[0], $u[1] ) as $name ) {
-					$k = self::key( str_replace( ' ', '', self::fold( $name ) ) );
-					if ( $k ) {
-						$map[ $k ][ $di . ':' . $ti ] = true;
+					$w = str_replace( ' ', '', self::fold( $name ) );
+					foreach ( array( self::key( $w ), self::exact_key( $w ) ) as $k ) {
+						if ( $k ) {
+							$map[ $k ][ $di . ':' . $ti ] = true;
+						}
 					}
 				}
 			}
@@ -227,10 +237,13 @@ class PG_Thana_Finder {
 		$names = self::names();
 		$cands = array();
 		foreach ( self::grams( $text ) as $g ) {
-			$k = self::key( $g[0] );
-			if ( $k && isset( $names[ $k ] ) ) {
-				foreach ( array_keys( $names[ $k ] ) as $t ) {
-					$cands[ $t ] = max( $cands[ $t ] ?? 0, $g[1] );
+			foreach ( array( self::exact_key( $g[0] ), self::key( $g[0] ) ) as $i => $k ) {
+				if ( $k && isset( $names[ $k ] ) ) {
+					// Longer and exact matches are more specific.
+					$sc = mb_strlen( $k ) + ( 0 === $i || 0 === strpos( $k, 'n:' ) ? 4 : 0 );
+					foreach ( array_keys( $names[ $k ] ) as $t ) {
+						$cands[ $t ] = max( $cands[ $t ] ?? 0, $sc );
+					}
 				}
 			}
 		}
@@ -263,7 +276,7 @@ class PG_Thana_Finder {
 				arsort( $c );
 				$t   = key( $c );
 				$top = current( $c );
-				if ( $top / $tot < 0.8 ) {
+				if ( $top < 2 || $top / $tot < 0.85 ) {
 					continue;
 				}
 				if ( null !== $di && (int) strtok( $t, ':' ) !== (int) $di ) {
@@ -274,7 +287,7 @@ class PG_Thana_Finder {
 			if ( $score ) {
 				arsort( $score );
 				$v = array_values( $score );
-				if ( count( $v ) < 2 || $v[0] >= 1.5 * $v[1] ) {
+				if ( ( count( $v ) < 2 || $v[0] >= 2 * $v[1] ) && ( null !== $di || $v[0] >= 3 ) ) {
 					list( $a, $b ) = array_map( 'intval', explode( ':', key( $score ) ) );
 					return array( $a, $b );
 				}
@@ -298,6 +311,9 @@ class PG_Thana_Finder {
 		}
 		if ( ! $cands ) {
 			return null;
+		}
+		if ( null === $di && max( $cands ) < 9 ) {
+			return null; // a short, loose match with no district to back it up is a guess
 		}
 		arsort( $cands );
 		$best = array_keys( $cands, max( $cands ), true );
