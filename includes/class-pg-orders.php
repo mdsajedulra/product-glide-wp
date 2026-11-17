@@ -92,6 +92,7 @@ class PG_Orders {
 			'addr_typed'    => (string) $order->get_meta( '_bdsa_typed_address' ),
 			'addr_clean'    => (string) $order->get_meta( '_bdsa_refined_address' ),
 			'addr_zone'     => (string) $order->get_meta( '_bdsa_zone' ),
+			'geo'           => self::geo_of( $order ),
 			'customer_note' => $order->get_customer_note(),
 			'items'         => $items,
 			'item_count'    => (int) $order->get_item_count(),
@@ -653,6 +654,20 @@ class PG_Orders {
 	 * delivery charge and an extra discount spread across lines. Stock is adjusted
 	 * the same way the WooCommerce order screen does it.
 	 */
+	/** District / thana indexes of an order (for the edit form dropdowns). */
+	private static function geo_of( WC_Order $order ) {
+		if ( ! class_exists( 'PG_Address' ) ) {
+			return null;
+		}
+		$g      = PG_Address::geo();
+		$code   = $order->get_shipping_state() ? $order->get_shipping_state() : $order->get_billing_state();
+		$city   = $order->get_shipping_city() ? $order->get_shipping_city() : $order->get_billing_city();
+		$states = WC()->countries ? (array) WC()->countries->get_states( 'BD' ) : array();
+		$di     = isset( $states[ $code ] ) ? $g::district_from_wc_state( $states[ $code ] ) : null;
+		$ti     = null !== $di && $city ? $g::resolve_thana( $di, $city ) : null;
+		return array( 'd' => $di, 't' => $ti );
+	}
+
 	public static function ajax_save() {
 		PG_Helpers::guard_ajax();
 		$order = wc_get_order( PG_Helpers::post_int( 'order_id' ) );
@@ -682,9 +697,20 @@ class PG_Orders {
 		$old_name = PG_Helpers::order_name( $order );
 		$old_addr = PG_Helpers::order_address( $order );
 		$old_ph   = $order->get_billing_phone();
+		$has_geo = array_key_exists( 'district', $c ) && class_exists( 'PG_Address' );
+		if ( $has_geo ) {
+			unset( $addr['city'] ); // district + thana dropdowns decide state and city below
+		}
 		foreach ( $addr as $k => $v ) {
 			$order->{'set_billing_' . $k}( $v );
 			$order->{'set_shipping_' . $k}( $v );
+		}
+		if ( $has_geo && '' !== (string) $c['district'] ) {
+			if ( ! isset( $c['thana'] ) || '' === (string) $c['thana'] ) {
+				$order->set_billing_city( '' );
+				$order->set_shipping_city( '' );
+			}
+			PG_Address::apply_to_order( $order, $c['district'], isset( $c['thana'] ) ? $c['thana'] : '', $addr['address_1'] );
 		}
 		$order->set_billing_address_2( '' );
 		$order->set_shipping_address_2( '' );

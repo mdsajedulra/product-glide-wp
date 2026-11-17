@@ -887,11 +887,13 @@
 					'<div class="pg-field"><label>Name</label><input type="text" data-c="name" value="' + esc(o.name) + '"></div>' +
 					'<div class="pg-field"><label>Phone</label><input type="tel" data-c="phone" value="' + esc(o.phone_bd || o.phone) + '"></div>' +
 				'</div>' +
-				'<div class="pg-field"><label>Address</label><textarea rows="2" data-c="address">' + esc(o.address_1 || o.address) + '</textarea></div>' +
-				'<div class="pg-grid pg-grid-2">' +
-					'<div class="pg-field"><label>City / District</label><input type="text" data-c="city" value="' + esc(o.city) + '"></div>' +
-					'<div class="pg-field"><label>Alternative phone</label><input type="tel" data-c="alt_phone" value="' + esc(o.alt_phone) + '"></div>' +
+				'<div class="pg-field"><label>Address</label><textarea rows="2" data-c="address" data-f="address">' + esc(o.address_1 || o.address) + '</textarea></div>' +
+				'<div class="pg-grid pg-grid-2" data-geo-box>' +
+					'<div class="pg-field"><label>District</label><select data-c="district" data-geo-d data-val="' + esc(o.geo && o.geo.d != null ? o.geo.d : '') + '"><option value="">…</option></select></div>' +
+					'<div class="pg-field"><label>Thana / Upazila <span class="pg-muted">(optional)</span></label><select data-c="thana" data-geo-t data-val="' + esc(o.geo && o.geo.t != null ? o.geo.t : '') + '"><option value="">—</option></select></div>' +
 				'</div>' +
+				'<div class="pg-geo-zone" data-geo-zone hidden></div>' +
+				'<div class="pg-field"><label>Alternative phone</label><input type="tel" data-c="alt_phone" value="' + esc(o.alt_phone) + '"></div>' +
 				'<div class="pg-field"><label>Email</label><input type="email" data-c="email" value="' + esc(o.email) + '" placeholder="optional"></div>' +
 				'<div class="pg-field"><label>Customer note</label><textarea rows="2" data-c="note">' + esc(o.customer_note) + '</textarea></div>' +
 			'</div>' +
@@ -974,6 +976,16 @@
 			}).catch(function (err) { A.toast(err.message, 'bad'); A.busy(b, false); });
 		});
 		renderItems();
+		// District / thana dropdowns; a changed delivery zone updates the delivery charge.
+		if (window.PGOrderForm && window.PGOrderForm.initGeo) {
+			var geoBox = body.querySelector('.pg-edit'), geoReady = false;
+			geoBox.addEventListener('pg:zone', function (e) {
+				if (!geoReady || !e.detail) { return; }
+				var dl = body.querySelector('[data-delivery]');
+				if (dl && Number(dl.value) !== Number(e.detail.fee)) { dl.value = Math.round(e.detail.fee); renderSum(); A.toast('Delivery charge set to ' + A.money(e.detail.fee) + ' (' + e.detail.label + ')', 'ok'); }
+			});
+			window.PGOrderForm.initGeo(geoBox, { detect: true }).then(function () { geoReady = true; });
+		}
 	}
 
 	/* ---------- Courier sync ---------- */
