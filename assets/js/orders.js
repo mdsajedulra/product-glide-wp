@@ -673,6 +673,40 @@
 	})();
 
 
+	// Bulk status change: pick a status, see what will move, confirm.
+	function bulkStatus() {
+		var ids = Array.from(state.selected);
+		if (!ids.length) { return; }
+		var skip = { 'rescheduled': 1, 'checkout-draft': 1, 'failed': 1, 'refunded': 1 };
+		var opts = Object.keys(cfg.statuses).filter(function (k) { return !skip[k]; }).map(function (k) {
+			return '<option value="' + esc(k) + '">' + esc(cfg.statuses[k]) + '</option>';
+		}).join('');
+		var nums = ids.map(function (id) { var o = state.orders[id]; return '#' + (o && o.number ? o.number : id); });
+		var m = A.modal('Change status of ' + ids.length + ' order' + (ids.length > 1 ? 's' : ''),
+			'<div class="pg-field"><label>New status</label><select data-bs><option value="">— Choose —</option>' + opts + '</select></div>' +
+			'<p class="pg-muted" style="margin:8px 0 12px;max-height:80px;overflow:auto">' + A.esc(nums.join(', ')) + '</p>' +
+			'<label style="display:flex;gap:8px;align-items:flex-start;margin:0 0 14px;font-size:14px"><input type="checkbox" data-bn> <span>Send customers the WhatsApp message set up for this status<br><span class="pg-muted">Leave off for clean-ups (for example cancelling old orders) so customers get no message.</span></span></label>' +
+			'<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="pg-btn" data-close>Cancel</button>' +
+			'<button type="button" class="pg-btn pg-btn-primary" data-yes disabled>Change status</button></div>', { center: true });
+		var sel = m.body.querySelector('[data-bs]'), yes = m.body.querySelector('[data-yes]');
+		sel.addEventListener('change', function () {
+			yes.disabled = !sel.value;
+			yes.textContent = sel.value ? 'Yes, move ' + ids.length + ' to ' + cfg.statuses[sel.value] : 'Change status';
+			yes.classList.toggle('pg-btn-danger', sel.value === 'cancelled');
+		});
+		yes.addEventListener('click', function () {
+			if (!sel.value) { return; }
+			A.busy(yes, true);
+			A.ajax('pg_orders_bulk_status', { ids: ids, status: sel.value, notify: m.body.querySelector('[data-bn]').checked ? 1 : 0 }).then(function (d) {
+				m.close();
+				A.toast(d.done + ' order(s) moved to ' + d.label + (d.same ? ' · ' + d.same + ' already there' : ''), 'ok');
+				state.selected.clear();
+				load(true);
+				if (typeof refreshKpis === 'function') { refreshKpis(); }
+			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(yes, false); });
+		});
+	}
+
 	// Moving orders between "Ready to print" and "Printed" always asks first, so a stray click changes nothing.
 	function askPrintMove(btn, mode) {
 		var ids = Array.from(state.selected);
@@ -761,6 +795,7 @@
 		if (act === 'print') { window.open(A.printUrl(Array.from(state.selected)), '_blank'); }
 		if (act === 'sf') { bulkSend(); }
 		if (act === 'unprint' || act === 'markprinted') { askPrintMove(b, act === 'unprint' ? 'undo' : 'printed'); }
+		if (act === 'status') { bulkStatus(); }
 	});
 
 	$list.addEventListener('change', function (e) {

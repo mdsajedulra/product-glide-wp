@@ -27,6 +27,9 @@ class PG_WhatsApp {
 	/** True while an automatic (not staff-clicked) message is being sent. */
 	private static $auto = false;
 
+	/** Set by bulk actions when the team chose not to message customers. */
+	public static $mute = false;
+
 	public static function init() {
 		add_action( 'wp_ajax_pg_wa_templates', array( __CLASS__, 'ajax_templates' ) );
 		add_action( 'wp_ajax_pg_wa_save_map', array( __CLASS__, 'ajax_save_map' ) );
@@ -393,7 +396,7 @@ class PG_WhatsApp {
 	}
 
 	public static function on_status( $order_id, $from, $to, $order ) {
-		if ( ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() || ! $order ) {
+		if ( self::$mute || ! PG_Settings::get( 'wa_auto', 0 ) || ! self::configured() || ! $order ) {
 			return;
 		}
 		$trigger = 'printed' === $to ? 'courier_sent' : $to; // sent once per order

@@ -1012,3 +1012,5 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 .wa-prev-doc span { font-size: 30px; }
 .wa-prev-doc small { display: block; color: #667781; }
 .wa-chat.is-drop::after { content: "Drop to send"; position: absolute; inset: 8px; border: 2px dashed var(--wa-green); border-radius: 12px; background: rgba(37, 211, 102, .08); display: grid; place-items: center; font: 600 18px var(--pg-font); color: var(--wa-dark); z-index: 5; pointer-events: none; }
+.pg-btn.pg-btn-primary.pg-btn-danger { background: #dc2626; border-color: #dc2626; }
+.pg-btn.pg-btn-primary.pg-btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }

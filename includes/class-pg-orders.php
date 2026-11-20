@@ -45,7 +45,7 @@ class PG_Orders {
 	}
 
 	public static function init() {
-		foreach ( array( 'list', 'notes', 'add_note', 'edit_note', 'delete_note', 'history', 'set_status', 'detail', 'counts', 'save' ) as $a ) {
+		foreach ( array( 'list', 'notes', 'add_note', 'edit_note', 'delete_note', 'history', 'set_status', 'bulk_status', 'detail', 'counts', 'save' ) as $a ) {
 			add_action( 'wp_ajax_pg_orders_' . $a, array( __CLASS__, 'ajax_' . $a ) );
 		}
 	}
@@ -636,6 +636,40 @@ class PG_Orders {
 		}
 		$order->update_status( $status, __( 'Status changed from Product Glide.', 'product-glide' ), true );
 		wp_send_json_success( array( 'order' => self::order_card_data( wc_get_order( $order->get_id() ) ) ) );
+	}
+
+	/** Change the status of many orders at once (customer messages only when asked for). */
+	public static function ajax_bulk_status() {
+		PG_Helpers::guard_ajax();
+		$status = sanitize_key( PG_Helpers::post( 'status' ) );
+		$ids    = isset( $_POST['ids'] ) ? array_slice( array_filter( array_map( 'absint', (array) wp_unslash( $_POST['ids'] ) ) ), 0, 300 ) : array(); // phpcs:ignore
+		if ( ! $ids || 'rescheduled' === $status || ! array_key_exists( 'wc-' . $status, wc_get_order_statuses() ) ) {
+			wp_send_json_error( array( 'message' => __( 'Choose orders and a status.', 'product-glide' ) ) );
+		}
+		$notify = (bool) PG_Helpers::post_int( 'notify' );
+		$label  = wc_get_order_status_name( $status );
+		$done   = 0;
+		$same   = 0;
+		if ( ! $notify && class_exists( 'PG_WhatsApp' ) ) {
+			PG_WhatsApp::$mute = true;
+		}
+		foreach ( $ids as $id ) {
+			$o = wc_get_order( $id );
+			if ( ! $o || 'shop_order' !== $o->get_type() ) {
+				continue;
+			}
+			if ( $o->get_status() === $status ) {
+				$same++;
+				continue;
+			}
+			/* translators: %s: status name */
+			$o->update_status( $status, sprintf( __( 'Bulk status change to %s from Product Glide.', 'product-glide' ), $label ) . ( $notify ? '' : ' ' . __( '(No customer message.)', 'product-glide' ) ), true );
+			$done++;
+		}
+		if ( class_exists( 'PG_WhatsApp' ) ) {
+			PG_WhatsApp::$mute = false;
+		}
+		wp_send_json_success( array( 'done' => $done, 'same' => $same, 'label' => $label ) );
 	}
 
 	public static function ajax_detail() {
