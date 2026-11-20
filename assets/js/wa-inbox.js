@@ -169,7 +169,7 @@
 	function mediaHtml(m) {
 		if (!m.media) { return ''; }
 		var src = W.mediaUrl + '&id=' + m.id;
-		if (m.type === 'image' || m.type === 'sticker') { return '<a href="' + esc(src) + '" target="_blank" rel="noopener" class="wa-img' + (m.type === 'sticker' ? ' is-sticker' : '') + '"><img loading="lazy" src="' + esc(src) + '" alt="Photo from customer"></a>'; }
+		if (m.type === 'image' || m.type === 'sticker') { return '<a href="' + esc(src) + '" target="_blank" rel="noopener" class="wa-img' + (m.type === 'sticker' ? ' is-sticker' : '') + '"><img loading="lazy" src="' + esc(src) + '" alt="' + (m.dir === 'out' ? 'Photo' : 'Photo from customer') + '"></a>'; }
 		if (m.type === 'audio') { return '<audio controls preload="none" src="' + esc(src) + '"></audio>'; }
 		if (m.type === 'video') { return '<video controls preload="none" src="' + esc(src) + '"></video>'; }
 		return '<a class="wa-doc" href="' + esc(src) + '" target="_blank" rel="noopener"><span>📄</span>' + esc(m.filename || 'Document') + '</a>';
@@ -212,9 +212,15 @@
 				'<div class="wa-compose">' +
 					'<button type="button" class="wa-icon-btn" data-quick title="Quick replies" aria-label="Quick replies"><svg viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></button>' +
 					'<button type="button" class="wa-icon-btn" data-tplbtn title="Send a template" aria-label="Send a template"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H5.2L4 17.2V4zm0-2a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm2 4h12v2H6zm0 3h12v2H6zm0 3h8v2H6z"/></svg></button>' +
+					'<button type="button" class="wa-icon-btn" data-attach title="Send a photo, PDF or file (you can also paste or drop a photo)" aria-label="Attach"><svg viewBox="0 0 24 24"><path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6z"/></svg></button>' +
+					'<input type="file" data-file hidden accept="image/jpeg,image/png,image/webp,video/mp4,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip">' +
 					'<textarea data-text rows="1" placeholder="Type a message" title="Enter to send · Shift+Enter for a new line"></textarea>' +
+					'<button type="button" class="wa-icon-btn wa-mic" data-mic title="Record a voice message" aria-label="Record a voice message"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3zm5.3-3a5.3 5.3 0 0 1-10.6 0H5a7 7 0 0 0 6 6.9V22h2v-3.1a7 7 0 0 0 6-6.9h-1.7z"/></svg></button>' +
 					'<button class="wa-send" data-send aria-label="Send"><svg viewBox="0 0 24 24"><path d="M2 21 23 12 2 3v7l15 2-15 2z"/></svg></button>' +
-				'</div>';
+				'</div>' +
+				'<div class="wa-rec" data-rec hidden><button type="button" class="wa-icon-btn" data-rec-cancel title="Cancel" aria-label="Cancel recording"><svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' +
+					'<span class="wa-rec-dot"></span><span class="wa-rec-time" data-rec-time>0:00</span><span class="wa-rec-label">Recording… speak now</span>' +
+					'<button class="wa-send" data-rec-send aria-label="Send voice message"><svg viewBox="0 0 24 24"><path d="M2 21 23 12 2 3v7l15 2-15 2z"/></svg></button></div>';
 		}
 		var opts = S.maps.map(function (m) { return '<option value="' + m.id + '">' + esc(m.name) + '</option>'; }).join('');
 		return '<div class="wa-closed">The customer has not written in the last 24 hours, so WhatsApp only allows an approved template. When they reply, normal chat opens for 24 hours.</div>' +
@@ -381,7 +387,138 @@
 		}
 		var tb = $chat.querySelector('[data-send-tpl]');
 		if (tb) { tb.addEventListener('click', function () { sendTemplate($chat.querySelector('[data-tpl]').value, tb); }); }
+		bindMedia();
 	}
+
+	/* ---------- Photos, files and voice messages ---------- */
+
+	var MAX = { image: 5, video: 16, audio: 16, document: 100 };
+	function kindOf(f) {
+		var t = (f.type || '').toLowerCase();
+		if (/^image\/(jpeg|png|webp)$/.test(t)) { return 'image'; }
+		if (/^video\/(mp4|3gpp)$/.test(t)) { return 'video'; }
+		if (/^audio\//.test(t)) { return 'audio'; }
+		return 'document';
+	}
+	function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+
+	// WhatsApp takes JPG/PNG photos only: turn WebP (or a huge photo) into a JPG first.
+	function prepareImage(f) {
+		if (!/^image\/(webp|png|jpeg)$/.test(f.type) || (f.type !== 'image/webp' && f.size <= 4.5 * 1048576)) { return Promise.resolve(f); }
+		return new Promise(function (resolve) {
+			var img = new Image(), url = URL.createObjectURL(f);
+			img.onload = function () {
+				var max = 2560, w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(w, h));
+				var c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+				var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+				URL.revokeObjectURL(url);
+				c.toBlob(function (b) { resolve(b ? new File([b], (f.name || 'photo').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : f); }, 'image/jpeg', 0.88);
+			};
+			img.onerror = function () { URL.revokeObjectURL(url); resolve(f); };
+			img.src = url;
+		});
+	}
+
+	function upload(file, caption, extra) {
+		return A.ajax('pg_wa_send_media', Object.assign({ phone: S.phone, file: file, caption: caption || '', mime: file.type }, extra || {})).then(function () {
+			poll();
+		}).catch(function (e) {
+			A.toast(e.message, 'bad');
+			if (e.data && e.data.closed) { S.window = 0; paintComposer(); }
+			throw e;
+		});
+	}
+
+	function previewSend(file) {
+		prepareImage(file).then(function (f) {
+			var k = kindOf(f);
+			if (f.size > MAX[k] * 1048576) { A.toast('File too large. WhatsApp allows up to ' + MAX[k] + ' MB for this type.', 'bad'); return; }
+			var url = URL.createObjectURL(f);
+			var view = k === 'image' ? '<img class="wa-prev-img" src="' + url + '" alt="">'
+				: k === 'video' ? '<video class="wa-prev-img" src="' + url + '" controls></video>'
+				: k === 'audio' ? '<audio src="' + url + '" controls style="width:100%"></audio>'
+				: '<div class="wa-prev-doc"><span>📄</span><div><b>' + esc(f.name || 'File') + '</b><small>' + fmtSize(f.size) + '</small></div></div>';
+			var m = A.modal(k === 'image' ? 'Send photo' : k === 'document' ? 'Send file' : 'Send ' + k,
+				'<div class="wa-prev">' + view +
+				(k !== 'audio' ? '<textarea data-cap rows="2" placeholder="Add a caption (optional)"></textarea>' : '') +
+				'<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="pg-btn" data-close>Cancel</button>' +
+				'<button type="button" class="pg-btn pg-btn-primary" data-go>Send to ' + esc((S.contact && S.contact.name) || S.phone) + '</button></div></div>', { center: true });
+			var cap = m.body.querySelector('[data-cap]'), t = $chat.querySelector('[data-text]');
+			if (cap && t && t.value.trim()) { cap.value = t.value.trim(); }
+			setTimeout(function () { (cap || m.body.querySelector('[data-go]')).focus(); }, 30);
+			var go = m.body.querySelector('[data-go]');
+			function doSend() {
+				A.busy(go, true);
+				upload(f, cap ? cap.value.trim() : '').then(function () {
+					if (cap && t && cap.value.trim() === t.value.trim()) { t.value = ''; t.style.height = 'auto'; }
+					URL.revokeObjectURL(url); m.close(); A.toast('Sent', 'ok');
+				}).catch(function () { A.busy(go, false); });
+			}
+			go.addEventListener('click', doSend);
+			if (cap) { cap.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } }); }
+		});
+	}
+
+	var rec = null, recTimer = null;
+	function recUi(on) {
+		var row = $chat.querySelector('.wa-compose'), bar = $chat.querySelector('[data-rec]');
+		if (row) { row.hidden = on; }
+		if (bar) { bar.hidden = !on; }
+		clearInterval(recTimer);
+		if (on) {
+			var el = $chat.querySelector('[data-rec-time]');
+			recTimer = setInterval(function () {
+				if (!rec) { return; }
+				var s = rec.seconds();
+				el.textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+				if (s >= 300) { stopRec(true); } // 5 minutes is plenty for a voice note
+			}, 250);
+		}
+	}
+	function stopRec(send) {
+		if (!rec) { return; }
+		var r = rec; rec = null;
+		if (!send) { r.cancel(); recUi(false); return; }
+		var b = $chat.querySelector('[data-rec-send]');
+		A.busy(b, true);
+		r.stop().then(function (file) {
+			if (file.size < 1200) { throw new Error('The recording was empty. Check the microphone and try again.'); }
+			return upload(file, '', { kind: 'voice' });
+		}).then(function () { A.toast('Voice message sent', 'ok'); })
+			.catch(function (e) { if (e && e.message) { A.toast(e.message, 'bad'); } })
+			.finally(function () { A.busy(b, false); recUi(false); });
+	}
+
+	function bindMedia() {
+		var att = $chat.querySelector('[data-attach]'), inp = $chat.querySelector('[data-file]'), mic = $chat.querySelector('[data-mic]'), t = $chat.querySelector('[data-text]');
+		if (!att) { return; }
+		att.addEventListener('click', function () { inp.value = ''; inp.click(); });
+		inp.addEventListener('change', function () { if (inp.files && inp.files[0]) { previewSend(inp.files[0]); } });
+		t.addEventListener('paste', function (e) {
+			var items = (e.clipboardData && e.clipboardData.files) || [];
+			if (items.length) { e.preventDefault(); previewSend(items[0]); }
+		});
+		mic.addEventListener('click', function () {
+			if (rec) { return; }
+			A.busy(mic, true);
+			window.PGVoice.start().then(function (r) { rec = r; recUi(true); })
+				.catch(function (e) {
+					A.toast(e && e.name === 'NotAllowedError' ? 'Allow the microphone for this site (click the 🔒 icon in the address bar) and try again.' : (e.message || 'Could not start the microphone.'), 'bad');
+				}).finally(function () { A.busy(mic, false); });
+		});
+		$chat.querySelector('[data-rec-cancel]').addEventListener('click', function () { stopRec(false); });
+		$chat.querySelector('[data-rec-send]').addEventListener('click', function () { stopRec(true); });
+	}
+
+	// Drop a photo or file anywhere on the open chat.
+	$chat.addEventListener('dragover', function (e) {
+		if (S.window > 0 && e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) { e.preventDefault(); $chat.classList.add('is-drop'); }
+	});
+	$chat.addEventListener('dragleave', function (e) { if (e.target === $chat || !$chat.contains(e.relatedTarget)) { $chat.classList.remove('is-drop'); } });
+	$chat.addEventListener('drop', function (e) {
+		$chat.classList.remove('is-drop');
+		if (S.window > 0 && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) { e.preventDefault(); previewSend(e.dataTransfer.files[0]); }
+	});
 
 	// Close the quick-reply list when clicking elsewhere (one listener for the whole page).
 	document.addEventListener('click', function (e) {

@@ -10,7 +10,9 @@
 		fd.append('nonce', cfg.nonce);
 		Object.keys(data || {}).forEach(function (k) {
 			var v = data[k];
-			if (Array.isArray(v) && v.some(function (x) { return x !== null && typeof x === 'object'; })) {
+			if (typeof Blob !== 'undefined' && v instanceof Blob) {
+				fd.append(k, v, v.name || 'file');
+			} else if (Array.isArray(v) && v.some(function (x) { return x !== null && typeof x === 'object'; })) {
 				// Arrays of objects (order items etc.) go as one JSON string.
 				fd.append(k, JSON.stringify(v));
 			} else if (Array.isArray(v)) {

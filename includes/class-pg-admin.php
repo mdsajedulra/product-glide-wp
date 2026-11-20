@@ -163,7 +163,8 @@ class PG_Admin {
 				$handles = array( 'pg-app', 'pg-order-form', 'pg-product-picker', 'pg-ocr' );
 				break;
 			case 'pg-wa':
-				wp_enqueue_script( 'pg-wa-inbox', PG_URL . 'assets/js/wa-inbox.js', array( 'pg-app' ), $v, true );
+				wp_enqueue_script( 'pg-wa-voice', PG_URL . 'assets/js/wa-voice.js', array(), $v, true );
+				wp_enqueue_script( 'pg-wa-inbox', PG_URL . 'assets/js/wa-inbox.js', array( 'pg-app', 'pg-wa-voice' ), $v, true );
 				wp_localize_script(
 					'pg-wa-inbox',
 					'PG_WA',
@@ -174,7 +175,7 @@ class PG_Admin {
 						'mediaUrl'    => add_query_arg( array( 'action' => 'pg_wa_media', 'nonce' => wp_create_nonce( 'pg_ajax' ) ), admin_url( 'admin-ajax.php' ) ),
 					)
 				);
-				$handles = array( 'pg-app', 'pg-wa-inbox' );
+				$handles = array( 'pg-app', 'pg-wa-voice', 'pg-wa-inbox' );
 				break;
 			case 'pg-profit':
 				wp_enqueue_script( 'pg-profit', PG_URL . 'assets/js/profit.js', array( 'pg-app' ), $v, true );

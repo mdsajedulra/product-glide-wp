@@ -19,7 +19,7 @@ class PG_WA_Inbox {
 
 	public static function init() {
 		add_action( 'rest_api_init', array( __CLASS__, 'routes' ) );
-		foreach ( array( 'inbox', 'thread', 'reply', 'send_tpl', 'unread', 'mark', 'quick' ) as $a ) {
+		foreach ( array( 'inbox', 'thread', 'reply', 'send_tpl', 'unread', 'mark', 'quick', 'send_media' ) as $a ) {
 			add_action( 'wp_ajax_pg_wa_' . $a, array( __CLASS__, 'ajax_' . $a ) );
 		}
 		add_action( 'wp_ajax_pg_wa_media', array( __CLASS__, 'ajax_media' ) );
@@ -422,6 +422,104 @@ class PG_WA_Inbox {
 		return $res;
 	}
 
+	/**
+	 * Which WhatsApp message type a file goes out as, and its size limit (Meta's limits).
+	 *
+	 * @return array|null [type, max bytes]
+	 */
+	public static function media_kind( $mime ) {
+		$mime = strtolower( trim( strtok( (string) $mime, ';' ) ) );
+		if ( in_array( $mime, array( 'image/jpeg', 'image/png' ), true ) ) {
+			return array( 'image', 5 * MB_IN_BYTES );
+		}
+		if ( in_array( $mime, array( 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/amr', 'audio/x-m4a', 'audio/m4a' ), true ) ) {
+			return array( 'audio', 16 * MB_IN_BYTES );
+		}
+		if ( in_array( $mime, array( 'video/mp4', 'video/3gpp' ), true ) ) {
+			return array( 'video', 16 * MB_IN_BYTES );
+		}
+		if ( '' !== $mime && 0 !== strpos( $mime, 'text/html' ) ) {
+			return array( 'document', 100 * MB_IN_BYTES );
+		}
+		return null;
+	}
+
+	/** Upload a file to Meta and send it as a photo / voice / video / document (inside the 24-hour window). */
+	public static function send_media( $key, $path, $mime, $filename, $caption = '' ) {
+		if ( ! PG_WhatsApp::configured() ) {
+			return new WP_Error( 'pg_wa', __( 'WhatsApp Cloud API is not configured.', 'product-glide' ) );
+		}
+		$kind = self::media_kind( $mime );
+		if ( ! $kind ) {
+			return new WP_Error( 'pg_wa', __( 'This file type cannot be sent on WhatsApp.', 'product-glide' ) );
+		}
+		$size = (int) @filesize( $path ); // phpcs:ignore
+		if ( $size <= 0 || $size > $kind[1] ) {
+			/* translators: %d: size limit in MB */
+			return new WP_Error( 'pg_wa', sprintf( __( 'File too large. WhatsApp allows up to %d MB for this type.', 'product-glide' ), $kind[1] / MB_IN_BYTES ) );
+		}
+		$mime_send = 'audio/x-m4a' === $mime || 'audio/m4a' === $mime ? 'audio/mp4' : strtok( $mime, ';' );
+		$boundary  = 'pg' . wp_generate_password( 24, false );
+		$body      = '';
+		foreach ( array( 'messaging_product' => 'whatsapp', 'type' => $mime_send ) as $k => $v ) {
+			$body .= "--{$boundary}\r\nContent-Disposition: form-data; name=\"{$k}\"\r\n\r\n{$v}\r\n";
+		}
+		$safe  = preg_replace( '/[^\w\.\-]+/', '_', $filename ? $filename : 'file' );
+		$body .= "--{$boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{$safe}\"\r\nContent-Type: {$mime_send}\r\n\r\n" . file_get_contents( $path ) . "\r\n--{$boundary}--\r\n"; // phpcs:ignore
+		$up = wp_remote_post(
+			'https://graph.facebook.com/' . rawurlencode( PG_Settings::get( 'wa_api_version', 'v21.0' ) ) . '/' . rawurlencode( PG_Settings::get( 'wa_phone_id' ) ) . '/media',
+			array(
+				'timeout' => 60,
+				'headers' => array(
+					'Authorization' => 'Bearer ' . PG_Settings::get( 'wa_token', '' ),
+					'Content-Type'  => 'multipart/form-data; boundary=' . $boundary,
+				),
+				'body'    => $body,
+			)
+		);
+		if ( is_wp_error( $up ) ) {
+			return $up;
+		}
+		$upd = json_decode( wp_remote_retrieve_body( $up ), true );
+		if ( empty( $upd['id'] ) ) {
+			return new WP_Error( 'pg_wa', isset( $upd['error']['message'] ) ? $upd['error']['message'] : __( 'Upload to WhatsApp failed.', 'product-glide' ) );
+		}
+		$obj = array( 'id' => $upd['id'] );
+		if ( '' !== $caption && 'audio' !== $kind[0] ) {
+			$obj['caption'] = mb_substr( $caption, 0, 1024 );
+		}
+		if ( 'document' === $kind[0] ) {
+			$obj['filename'] = mb_substr( $filename ? $filename : 'file', 0, 240 );
+		}
+		$res = PG_WhatsApp::api(
+			'POST',
+			rawurlencode( PG_Settings::get( 'wa_phone_id' ) ) . '/messages',
+			array(
+				'messaging_product' => 'whatsapp',
+				'recipient_type'    => 'individual',
+				'to'                => self::wa_to( $key ),
+				'type'              => $kind[0],
+				$kind[0]            => $obj,
+			)
+		);
+		if ( is_wp_error( $res ) ) {
+			return $res;
+		}
+		self::log(
+			array(
+				'wa_mid'   => isset( $res['messages'][0]['id'] ) ? $res['messages'][0]['id'] : '',
+				'phone'    => $key,
+				'type'     => $kind[0],
+				'body'     => 'audio' === $kind[0] ? '' : $caption,
+				'media_id' => $upd['id'],
+				'mime'     => $mime_send,
+				'filename' => 'document' === $kind[0] ? $filename : '',
+				'order_id' => self::latest_order( $key ),
+			)
+		);
+		return $res;
+	}
+
 	/* ------------------------------------------------------------------ */
 	/* AJAX                                                                */
 	/* ------------------------------------------------------------------ */
@@ -620,6 +718,31 @@ class PG_WA_Inbox {
 			wp_send_json_error( array( 'message' => __( 'The 24-hour reply window is closed (the customer has not messaged in the last 24 hours). WhatsApp only allows an approved template now.', 'product-glide' ), 'closed' => 1 ) );
 		}
 		$res = self::send_text( $key, mb_substr( $text, 0, 4000 ) );
+		if ( is_wp_error( $res ) ) {
+			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
+		}
+		wp_send_json_success( array( 'ok' => 1 ) );
+	}
+
+	public static function ajax_send_media() {
+		PG_Helpers::guard_ajax();
+		$key = self::key( PG_Helpers::post( 'phone' ) );
+		if ( '' === $key || empty( $_FILES['file']['tmp_name'] ) || ! is_uploaded_file( $_FILES['file']['tmp_name'] ) ) { // phpcs:ignore
+			wp_send_json_error( array( 'message' => __( 'Choose a file first.', 'product-glide' ) ) );
+		}
+		if ( ! self::window_left( $key ) ) {
+			wp_send_json_error( array( 'message' => __( 'The 24-hour reply window is closed (the customer has not messaged in the last 24 hours). WhatsApp only allows an approved template now.', 'product-glide' ), 'closed' => 1 ) );
+		}
+		$f    = $_FILES['file']; // phpcs:ignore
+		$name = sanitize_file_name( wp_unslash( $f['name'] ) );
+		$type = wp_check_filetype_and_ext( $f['tmp_name'], $name );
+		$mime = $type['type'] ? $type['type'] : sanitize_mime_type( $f['type'] );
+		// Voice notes recorded in the browser arrive as audio/ogg or audio/mp4 even when the extension check cannot tell.
+		$sent = sanitize_mime_type( PG_Helpers::post( 'mime', '' ) );
+		if ( in_array( $sent, array( 'audio/ogg', 'audio/mp4' ), true ) && 'voice' === PG_Helpers::post( 'kind', '' ) ) {
+			$mime = $sent;
+		}
+		$res = self::send_media( $key, $f['tmp_name'], $mime, $name, trim( PG_Helpers::post_textarea( 'caption' ) ) );
 		if ( is_wp_error( $res ) ) {
 			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
 		}
