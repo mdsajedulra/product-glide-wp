@@ -5,15 +5,16 @@
 	var root = document.getElementById('pg-profit-root');
 	if (!root) { return; }
 
-	var tab = 'profit';
+	var tab = 'parcels';
 	var f = { from: A.today().slice(0, 8) + '01', to: A.today(), courier: 'all' };
 
 	root.innerHTML =
-		'<div class="pg-tabs"><button class="pg-tab is-active" data-tab="profit">Profit / Loss</button><button class="pg-tab" data-tab="stock">Inventory & Costs</button></div>' +
-		'<div id="pg-tab-profit"></div><div id="pg-tab-stock" hidden></div>';
+		'<div class="pg-tabs"><button class="pg-tab is-active" data-tab="parcels">Parcel হিসাব</button><button class="pg-tab" data-tab="profit">Profit / Loss</button><button class="pg-tab" data-tab="stock">Inventory & Costs</button></div>' +
+		'<div id="pg-tab-parcels"></div><div id="pg-tab-profit" hidden></div><div id="pg-tab-stock" hidden></div>';
 
 	var $p = document.getElementById('pg-tab-profit');
 	var $s = document.getElementById('pg-tab-stock');
+	var $pp = document.getElementById('pg-tab-parcels');
 
 	/* ---------- Profit ---------- */
 
@@ -176,8 +177,151 @@
 		root.querySelectorAll('.pg-tab').forEach(function (x) { x.classList.toggle('is-active', x === b); });
 		$p.hidden = tab !== 'profit';
 		$s.hidden = tab !== 'stock';
+		$pp.hidden = tab !== 'parcels';
 		if (tab === 'stock' && !stockLoaded) { loadStock(); }
 	});
 
 	loadProfit();
+	initParcels();
+
+	/* ---------- Parcel ledger ---------- */
+
+	function initParcels() {
+		var pf = { from: f.from, to: f.to, basis: 'finished' }, show = 'done', q = '', data = null;
+		var ST = {
+			delivered: ['Delivered', 'pg-badge-ok'], partial: ['Partial', 'pg-badge-warn'], returned: ['Returned', 'pg-badge-bad'],
+			voided: ['Voided', ''], transit: ['On the way', '']
+		};
+		$pp.innerHTML =
+			'<div class="pg-card"><div class="pg-grid pg-grid-3">' +
+				'<div class="pg-field"><label>From</label><input type="date" data-pf="from" value="' + pf.from + '"></div>' +
+				'<div class="pg-field"><label>To</label><input type="date" data-pf="to" value="' + pf.to + '"></div>' +
+				'<div class="pg-field"><label>Count parcels by</label><select data-pf="basis"><option value="finished">Date delivered / returned</option><option value="booked">Date sent to courier</option></select></div>' +
+			'</div><div class="pg-chips">' +
+				['today:Today', '7:Last 7 days', '30:Last 30 days', 'month:This month', 'last:Last month'].map(function (x) {
+					var p = x.split(':'); return '<button class="pg-chip" data-ppreset="' + p[0] + '">' + p[1] + '</button>';
+				}).join('') +
+			'</div><p class="pg-muted" style="margin:6px 0 0">প্রতিটা পার্সেলের লাভ = কাস্টমার থেকে আসা টাকা (COD + অগ্রিম) − বইয়ের কেনা দাম − কুরিয়ার চার্জ। ফেরত পার্সেলে বই স্টকে ফিরে আসে, তাই ক্ষতি শুধু ফেরতের চার্জ। চার্জগুলো Steadfast যা জানিয়েছে সেটাই।</p></div>' +
+			'<div id="pp-out"><div class="pg-skel"></div></div>';
+
+		function money(n) { return A.money(n); }
+		function pl(n) { return '<b class="' + (n < 0 ? 'pg-neg' : 'pg-pos') + '">' + (n < 0 ? '−' : '') + A.money(Math.abs(n)) + '</b>'; }
+
+		function load() {
+			document.getElementById('pp-out').innerHTML = '<div class="pg-skel"></div>';
+			A.ajax('pg_parcels', pf).then(function (d) { data = d; render(); })
+				.catch(function (e) { document.getElementById('pp-out').innerHTML = '<div class="pg-alert pg-alert-bad">' + esc(e.message) + '</div>'; });
+		}
+
+		function rowsFor() {
+			return data.rows.filter(function (r) {
+				if (show === 'done' && (r.status === 'transit' || (r.status === 'voided' && !r.charge))) { return false; }
+				if (show !== 'done' && show !== 'all' && r.status !== show) { return false; }
+				if (q) {
+					var h = (r.number + ' ' + r.customer + ' ' + r.phone + ' ' + r.items + ' ' + r.tracking).toLowerCase();
+					if (h.indexOf(q) === -1) { return false; }
+				}
+				return true;
+			});
+		}
+
+		function render() {
+			var d = data, s = d.sum;
+			var html = '<div class="pg-stats">' +
+				stat('নিট লাভ (বিজ্ঞাপন খরচ বাদ দিয়ে)', pl(s.net_profit), 'big' + (s.net_profit < 0 ? ' neg' : '')) +
+				stat('ডেলিভারি পার্সেল থেকে লাভ', pl(s.profit_delivered)) +
+				stat('ফেরত পার্সেলে ক্ষতি', pl(s.loss_returned), s.loss_returned < 0 ? 'neg' : '') +
+				stat('বিজ্ঞাপন খরচ', money(s.ads)) +
+				stat('পার্সেল: ডেলিভারি / আংশিক / ফেরত', s.delivered + ' / ' + s.partial + ' / ' + s.returned) +
+				stat('ফেরতের হার', s.return_rate + '%', s.return_rate > 15 ? 'neg' : '') +
+				stat('ডেলিভারি পার্সেল প্রতি গড় লাভ', money(s.avg_delivered)) +
+				stat('কাস্টমার থেকে তোলা টাকা', money(s.collected)) +
+				stat('বইয়ের কেনা দাম', money(s.cogs)) +
+				stat('কুরিয়ার চার্জ (ডেলিভারি + ফেরত)', money(s.charge_delivery) + ' + ' + money(s.charge_return + s.charge_voided)) +
+				stat('Steadfast থেকে আপনার পাওনা', money(s.payable)) +
+				stat('রাস্তায় আছে', s.transit + ' টা · ' + money(s.transit_cod)) +
+				'</div>';
+			if (d.missing_cost.length) {
+				html += '<div class="pg-alert pg-alert-warn">' + d.missing_cost.length + 'টা বইয়ের কেনা দাম দেওয়া নেই, তাই লাভ বেশি দেখাচ্ছে: ' + esc(d.missing_cost.slice(0, 6).join(', ')) + ' — Inventory & Costs ট্যাবে দাম দিন।</div>';
+			}
+			if (s.estimated) {
+				html += '<div class="pg-alert pg-alert-warn">' + s.estimated + 'টা পার্সেলের চার্জ Steadfast এখনো জানায়নি, সেগুলোতে আনুমানিক চার্জ (ডেলিভারি ৳' + d.fallback.delivery + ', ফেরত ৳' + d.fallback.return + ') ধরা হয়েছে, পাশে ≈ চিহ্ন আছে।</div>';
+			}
+			if (s.mismatch) {
+				html += '<div class="pg-alert pg-alert-warn">' + s.mismatch + 'টা ডেলিভারি পার্সেলে কুরিয়ার যে টাকা তুলেছে তা COD-এর সাথে মেলে না, তালিকায় "টাকা কম/বেশি" চিহ্ন দেখুন।</div>';
+			}
+			var chips = [['done', 'শেষ হওয়া সব'], ['delivered', 'ডেলিভারি'], ['partial', 'আংশিক'], ['returned', 'ফেরত'], ['transit', 'রাস্তায়'], ['all', 'সব']];
+			html += '<div class="pg-card"><div class="pg-card-head" style="flex-wrap:wrap;gap:8px"><h2>প্রতিটা পার্সেল</h2>' +
+				'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div class="pg-chips" style="margin:0">' + chips.map(function (c) {
+					return '<button class="pg-chip' + (show === c[0] ? ' is-active' : '') + '" data-show="' + c[0] + '">' + c[1] + '</button>';
+				}).join('') + '</div><input type="search" id="pp-q" placeholder="অর্ডার, নাম, ফোন…" value="' + esc(q) + '" style="width:200px"><button class="pg-btn pg-btn-sm" id="pp-csv">⬇ Excel (CSV)</button></div></div>' +
+				'<div id="pp-table"></div></div>';
+			document.getElementById('pp-out').innerHTML = html;
+			table();
+		}
+
+		function table() {
+			var rows = rowsFor(), T = { cod: 0, collected: 0, advance: 0, revenue: 0, cogs: 0, charge: 0, profit: 0 };
+			rows.forEach(function (r) { Object.keys(T).forEach(function (k) { T[k] += Number(r[k] || 0); }); });
+			var noteTxt = { collected_less: 'টাকা কম', collected_more: 'টাকা বেশি', partial: 'আংশিক' };
+			var h = '<div class="pg-table-wrap"><table class="pg-table pg-ledger"><thead><tr><th>অর্ডার</th><th>কাস্টমার</th><th>বই</th><th>অবস্থা</th><th>পাঠানো</th><th>শেষ</th>' +
+				'<th class="r">COD</th><th class="r">তোলা হয়েছে</th><th class="r">অগ্রিম</th><th class="r">মোট আয়</th><th class="r">বইয়ের দাম</th><th class="r">কুরিয়ার চার্জ</th><th class="r">লাভ / ক্ষতি</th></tr></thead><tbody>';
+			h += rows.slice(0, 1500).map(function (r) {
+				var st = ST[r.status] || [r.status, ''];
+				var link = A.cfg.isAdmin && A.cfg.orderEditBase ? A.cfg.orderEditBase + r.order : '';
+				return '<tr class="' + (r.status === 'transit' ? 'is-muted' : '') + '"><td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">#' + esc(r.number) + '</a>' : '#' + esc(r.number)) + '</td>' +
+					'<td>' + esc(r.customer) + '<div class="pg-muted">' + esc(r.phone) + '</div></td>' +
+					'<td class="pg-ledger-items" title="' + esc(r.items) + '">' + esc(r.items) + '</td>' +
+					'<td><span class="pg-badge ' + st[1] + '">' + st[0] + '</span>' + (r.note && noteTxt[r.note] && r.note !== 'partial' ? ' <span class="pg-badge pg-badge-warn">' + noteTxt[r.note] + '</span>' : '') + '</td>' +
+					'<td>' + esc(r.booked) + '</td><td>' + esc(r.finished) + '</td>' +
+					'<td class="r">' + money(r.cod) + '</td><td class="r">' + (r.collected === null ? '—' : money(r.collected)) + '</td><td class="r">' + (r.advance ? money(r.advance) : '—') + '</td>' +
+					'<td class="r">' + money(r.revenue) + '</td><td class="r">' + (r.cogs ? money(r.cogs) : '—') + (r.status === 'partial' ? ' ≈' : '') + '</td>' +
+					'<td class="r">' + (r.estimated ? '≈ ' : '') + money(r.charge) + '</td><td class="r">' + pl(r.profit) + (r.status === 'transit' ? '<div class="pg-muted">আনুমানিক</div>' : '') + '</td></tr>';
+			}).join('');
+			if (!rows.length) { h += '<tr><td colspan="13" class="pg-muted">এই সময়ে কোনো পার্সেল নেই।</td></tr>'; }
+			h += '</tbody>' + (rows.length ? '<tfoot><tr><th colspan="6">মোট ' + rows.length + 'টা পার্সেল</th><th class="r">' + money(T.cod) + '</th><th class="r">' + money(T.collected) + '</th><th class="r">' + money(T.advance) + '</th><th class="r">' + money(T.revenue) + '</th><th class="r">' + money(T.cogs) + '</th><th class="r">' + money(T.charge) + '</th><th class="r">' + pl(T.profit) + '</th></tr></tfoot>' : '') + '</table></div>';
+			if (rows.length > 1500) { h += '<p class="pg-muted">প্রথম ১৫০০টা দেখানো হচ্ছে, পুরোটা CSV-তে পাবেন।</p>'; }
+			document.getElementById('pp-table').innerHTML = h;
+		}
+
+		function csv() {
+			var rows = rowsFor();
+			var head = ['Order', 'Customer', 'Phone', 'Items', 'Status', 'Tracking', 'Sent', 'Finished', 'COD', 'Collected', 'Advance', 'Revenue', 'Product cost', 'Courier charge', 'Charge estimated', 'Profit'];
+			var lines = [head].concat(rows.map(function (r) {
+				return [r.number, r.customer, r.phone, r.items, r.status, r.tracking, r.booked, r.finished, r.cod, r.collected === null ? '' : r.collected, r.advance, r.revenue, r.cogs, r.charge, r.estimated ? 'yes' : '', r.profit];
+			})).map(function (a) { return a.map(function (v) { v = String(v === null || v === undefined ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); });
+			var blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+			var a = document.createElement('a');
+			a.href = URL.createObjectURL(blob); a.download = 'parcel-hisab-' + pf.from + '-to-' + pf.to + '.csv';
+			document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+		}
+
+		$pp.addEventListener('change', function (e) {
+			var k = e.target.getAttribute('data-pf');
+			if (k) { pf[k] = e.target.value; load(); }
+		});
+		$pp.addEventListener('input', function (e) {
+			if (e.target.id === 'pp-q') { q = e.target.value.trim().toLowerCase(); table(); }
+		});
+		$pp.addEventListener('click', function (e) {
+			var pr = e.target.closest('[data-ppreset]');
+			if (pr) {
+				var r = presetRange(pr.getAttribute('data-ppreset'));
+				pf.from = r[0]; pf.to = r[1];
+				$pp.querySelector('[data-pf="from"]').value = pf.from;
+				$pp.querySelector('[data-pf="to"]').value = pf.to;
+				load();
+				return;
+			}
+			var sh = e.target.closest('[data-show]');
+			if (sh) {
+				show = sh.getAttribute('data-show');
+				$pp.querySelectorAll('[data-show]').forEach(function (b) { b.classList.toggle('is-active', b === sh); });
+				table();
+				return;
+			}
+			if (e.target.closest('#pp-csv')) { csv(); }
+		});
+		load();
+	}
 })();

@@ -16,6 +16,7 @@ class PG_Profit {
 		add_action( 'wp_ajax_pg_inventory', array( __CLASS__, 'ajax_inventory' ) );
 		add_action( 'wp_ajax_pg_cost_save', array( __CLASS__, 'ajax_cost_save' ) );
 		add_action( 'wp_ajax_pg_profit', array( __CLASS__, 'ajax_profit' ) );
+		add_action( 'wp_ajax_pg_parcels', array( __CLASS__, 'ajax_parcels' ) );
 		add_action( 'wp_ajax_pg_ads_save', array( __CLASS__, 'ajax_ads_save' ) );
 		add_action( 'wp_ajax_pg_ads_delete', array( __CLASS__, 'ajax_ads_delete' ) );
 	}
@@ -206,6 +207,184 @@ class PG_Profit {
 			$total       += (float) $a['amount'] * $days_overlap / max( 1, $days_entry );
 		}
 		return round( $total, 2 );
+	}
+
+	/* Parcel ledger ------------------------------------------------------ */
+
+	/**
+	 * One row per courier parcel with its own profit or loss.
+	 *
+	 * Delivered:  money in (cash collected + advance) − product cost − courier charge.
+	 * Partial:    same, product cost scaled to the share of the order that was paid for.
+	 * Returned:   books come back to stock, so the loss is the courier's return charge.
+	 * In transit: shown with the expected result, never counted in the totals.
+	 */
+	public static function ajax_parcels() {
+		PG_Helpers::guard_ajax( true );
+		$from = PG_Helpers::post( 'from' );
+		$to   = PG_Helpers::post( 'to' );
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $from ) || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $to ) ) {
+			$now  = new DateTime( 'now', PG_Helpers::tz() );
+			$to   = $now->format( 'Y-m-d' );
+			$from = $now->format( 'Y-m-01' );
+		}
+		$basis = 'booked' === PG_Helpers::post( 'basis' ) ? 'booked' : 'finished';
+		wp_send_json_success( self::parcels( $from, $to, $basis ) );
+	}
+
+	public static function parcels( $from, $to, $basis = 'finished' ) {
+		global $wpdb;
+		list( $s_utc, $e_utc ) = PG_Helpers::bd_range_bounds_utc( $from, $to );
+		$t   = PG_Install::table( 'consignments' );
+		$col = 'booked' === $basis ? 'created_at' : 'COALESCE(final_at, updated_at)';
+		// "Finished" range: parcels that ended in the range + every parcel still on the way.
+		$where = 'booked' === $basis
+			? $wpdb->prepare( 'created_at >= %s AND created_at < %s', $s_utc, $e_utc )
+			: $wpdb->prepare( "( courier_status IN ('delivered','partial_delivered','cancelled','voided') AND {$col} >= %s AND {$col} < %s ) OR courier_status NOT IN ('delivered','partial_delivered','cancelled','voided')", $s_utc, $e_utc ); // phpcs:ignore
+		$rows = $wpdb->get_results( "SELECT * FROM {$t} WHERE {$where} ORDER BY created_at DESC LIMIT 5000" ); // phpcs:ignore
+
+		$fd   = (float) PG_Settings::get( 'fallback_delivery', 70 );
+		$fr   = (float) PG_Settings::get( 'fallback_return', 70 );
+		$sum  = array(
+			'delivered' => 0, 'partial' => 0, 'returned' => 0, 'voided' => 0, 'transit' => 0,
+			'collected' => 0, 'advance' => 0, 'revenue' => 0, 'cogs' => 0,
+			'charge_delivery' => 0, 'charge_return' => 0, 'charge_voided' => 0,
+			'profit_delivered' => 0, 'loss_returned' => 0, 'transit_cod' => 0, 'estimated' => 0, 'mismatch' => 0,
+		);
+		$out  = array();
+		$miss = array();
+		foreach ( $rows as $r ) {
+			$o      = wc_get_order( (int) $r->order_id );
+			$st     = (string) $r->courier_status;
+			$kind   = in_array( $st, array( 'delivered' ), true ) ? 'delivered' : ( 'partial_delivered' === $st ? 'partial' : ( 'cancelled' === $st ? 'returned' : ( 'voided' === $st ? 'voided' : 'transit' ) ) );
+			$cod    = (float) $r->cod_amount;
+			$total  = $o ? (float) $o->get_total() - (float) $o->get_total_refunded() : $cod;
+			// Some older parcels were saved without their COD amount: use the order total.
+			if ( $cod <= 0 && 'cancelled' !== $st && 'voided' !== $st ) {
+				$cod = $total;
+			}
+			// Advance = money paid before delivery (bKash etc.), only on orders not marked cash on delivery.
+			// A COD order edited after booking is not an advance: the courier's figure is the truth.
+			$adv    = $o && 'cod' !== $o->get_payment_method() && (float) $r->cod_amount > 0 ? max( 0, round( $total - $cod, 2 ) ) : 0;
+			$items  = array();
+			$cogs   = 0;
+			if ( $o ) {
+				foreach ( $o->get_items() as $item ) {
+					$pid  = $item->get_variation_id() ? $item->get_variation_id() : $item->get_product_id();
+					$qty  = max( 0, (int) $item->get_quantity() - absint( $o->get_qty_refunded_for_item( $item->get_id() ) ) );
+					$cost = self::get_cost( $pid );
+					if ( null === $cost ) {
+						$miss[ $pid ] = $item->get_name();
+						$cost         = 0;
+					}
+					$cogs   += $cost * $qty;
+					$items[] = $item->get_name() . ' ×' . $qty;
+				}
+			}
+			$est    = null === $r->delivery_charge;
+			$charge = $est ? ( 'returned' === $kind ? $fr : ( 'voided' === $kind ? 0 : $fd ) ) : (float) $r->delivery_charge;
+			$coll   = null === $r->cod_collected ? null : (float) $r->cod_collected;
+			$rev    = 0;
+			$pc     = 0;
+			$note   = '';
+			switch ( $kind ) {
+				case 'delivered':
+					$coll = null === $coll ? $cod : $coll;
+					$rev  = $coll + $adv;
+					$pc   = $cogs;
+					if ( abs( $coll - $cod ) >= 1 ) {
+						$note = $coll < $cod ? 'collected_less' : 'collected_more';
+						$sum['mismatch']++;
+					}
+					break;
+				case 'partial':
+					$coll  = null === $coll ? 0 : $coll;
+					$rev   = $coll + $adv;
+					$share = $total > 0 ? min( 1, $rev / $total ) : 0;
+					$pc    = round( $cogs * $share, 2 ); // the rest of the books came back
+					$note  = 'partial';
+					break;
+				case 'returned':
+					$coll = (float) $coll; // normally 0
+					$rev  = $coll;
+					break;
+				case 'voided':
+					$coll = 0;
+					break;
+				default: // in transit: expected if delivered
+					$rev = $cod + $adv;
+					$pc  = $cogs;
+			}
+			$profit = round( $rev - $pc - $charge, 2 );
+			if ( 'transit' === $kind ) {
+				$sum['transit']++;
+				$sum['transit_cod'] += $cod;
+			} else {
+				$sum[ $kind ]++;
+				$sum['collected'] += (float) $coll;
+				$sum['advance']   += 'returned' === $kind || 'voided' === $kind ? 0 : $adv;
+				$sum['revenue']   += $rev;
+				$sum['cogs']      += $pc;
+				if ( $est && $charge > 0 ) {
+					$sum['estimated']++;
+				}
+				if ( 'returned' === $kind ) {
+					$sum['charge_return'] += $charge;
+					$sum['loss_returned'] += $profit;
+				} elseif ( 'voided' === $kind ) {
+					$sum['charge_voided'] += $charge;
+					$sum['loss_returned'] += $profit;
+				} else {
+					$sum['charge_delivery']  += $charge;
+					$sum['profit_delivered'] += $profit;
+				}
+			}
+			$out[] = array(
+				'order'     => (int) $r->order_id,
+				'number'    => $o ? $o->get_order_number() : (string) $r->order_id,
+				'customer'  => $o ? trim( $o->get_formatted_billing_full_name() ) : '',
+				'phone'     => $o ? $o->get_billing_phone() : '',
+				'items'     => implode( ', ', $items ),
+				'provider'  => $r->provider ? $r->provider : 'steadfast',
+				'tracking'  => (string) $r->tracking_code,
+				'status'    => $kind,
+				'booked'    => get_date_from_gmt( $r->created_at, 'Y-m-d' ),
+				'finished'  => 'transit' === $kind ? '' : get_date_from_gmt( $r->final_at ? $r->final_at : $r->updated_at, 'Y-m-d' ),
+				'cod'       => $cod,
+				'collected' => 'transit' === $kind ? null : (float) $coll,
+				'advance'   => $adv,
+				'revenue'   => round( $rev, 2 ),
+				'cogs'      => round( $pc, 2 ),
+				'charge'    => round( $charge, 2 ),
+				'estimated' => $est && $charge > 0,
+				'profit'    => $profit,
+				'note'      => $note,
+			);
+		}
+		$ads     = self::ad_spend_between( $from, $to );
+		$charges = $sum['charge_delivery'] + $sum['charge_return'] + $sum['charge_voided'];
+		$net     = $sum['profit_delivered'] + $sum['loss_returned'];
+		$done    = $sum['delivered'] + $sum['partial'] + $sum['returned'];
+		foreach ( $sum as $k => $v ) {
+			$sum[ $k ] = is_float( $v ) ? round( $v, 2 ) : $v;
+		}
+		return array(
+			'from'         => $from,
+			'to'           => $to,
+			'basis'        => $basis,
+			'rows'         => $out,
+			'sum'          => $sum + array(
+				'charges'      => round( $charges, 2 ),
+				'net_parcels'  => round( $net, 2 ),
+				'ads'          => $ads,
+				'net_profit'   => round( $net - $ads, 2 ),
+				'payable'      => round( $sum['collected'] - $charges, 2 ),
+				'return_rate'  => $done ? round( $sum['returned'] / $done * 100, 1 ) : 0,
+				'avg_delivered'=> ( $sum['delivered'] + $sum['partial'] ) ? round( $sum['profit_delivered'] / ( $sum['delivered'] + $sum['partial'] ), 2 ) : 0,
+			),
+			'missing_cost' => array_values( $miss ),
+			'fallback'     => array( 'delivery' => $fd, 'return' => $fr ),
+		);
 	}
 
 	/* Profit engine ------------------------------------------------------ */

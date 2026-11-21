@@ -1014,3 +1014,14 @@ body.folded.pg-app .pg-rs-pill { left: 52px; }
 .wa-chat.is-drop::after { content: "Drop to send"; position: absolute; inset: 8px; border: 2px dashed var(--wa-green); border-radius: 12px; background: rgba(37, 211, 102, .08); display: grid; place-items: center; font: 600 18px var(--pg-font); color: var(--wa-dark); z-index: 5; pointer-events: none; }
 .pg-btn.pg-btn-primary.pg-btn-danger { background: #dc2626; border-color: #dc2626; }
 .pg-btn.pg-btn-primary.pg-btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
+/* Parcel ledger */
+.pg-neg { color: #b91c1c; }
+.pg-pos { color: #15803d; }
+.pg-ledger td, .pg-ledger th { white-space: nowrap; font-size: 13px; vertical-align: top; }
+.pg-ledger .pg-ledger-items { white-space: normal; max-width: 220px; min-width: 140px; }
+.pg-ledger tr.is-muted td { opacity: .65; }
+.pg-ledger tfoot th { background: #f8fafc; font-size: 13px; }
+.pg-chip.is-active { background: var(--pg-primary-2, #1e3a8a); color: #fff; border-color: transparent; }
+.pg-ledger tfoot th { position: static; }
+.pg-stat.big .pg-pos, .pg-stat.big .pg-neg { color: #fff; }

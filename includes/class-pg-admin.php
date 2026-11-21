@@ -112,6 +112,7 @@ class PG_Admin {
 			'trackUrl'    => PG_Steadfast::TRACK_URL,
 			'adminUrl'    => admin_url(),
 			'isAdmin'     => current_user_can( 'manage_options' ),
+			'orderEditBase' => PG_Helpers::hpos() ? admin_url( 'admin.php?page=wc-orders&action=edit&id=' ) : admin_url( 'post.php?action=edit&post=' ),
 			'canWoo'      => current_user_can( 'edit_shop_orders' ) || current_user_can( 'manage_woocommerce' ),
 			'front'       => $front,
 			'ordersUrl'   => $front ? PG_App::url() : admin_url( 'admin.php?page=product-glide' ),
