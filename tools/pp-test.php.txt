@@ -1,4 +1,4 @@
-class PG_PP_Test {
+class PG_PP_Test2 {
 	public static function parcels( $from, $to, $basis = 'finished' ) {
 		global $wpdb;
 		list( $s_utc, $e_utc ) = PG_Helpers::bd_range_bounds_utc( $from, $to );
@@ -26,7 +26,13 @@ class PG_PP_Test {
 			$kind   = in_array( $st, array( 'delivered' ), true ) ? 'delivered' : ( 'partial_delivered' === $st ? 'partial' : ( 'cancelled' === $st ? 'returned' : ( 'voided' === $st ? 'voided' : 'transit' ) ) );
 			$cod    = (float) $r->cod_amount;
 			$total  = $o ? (float) $o->get_total() - (float) $o->get_total_refunded() : $cod;
-			$adv    = max( 0, round( $total - $cod, 2 ) );
+			// Some older parcels were saved without their COD amount: use the order total.
+			if ( $cod <= 0 && 'cancelled' !== $st && 'voided' !== $st ) {
+				$cod = $total;
+			}
+			// Advance = money paid before delivery (bKash etc.), only on orders not marked cash on delivery.
+			// A COD order edited after booking is not an advance: the courier's figure is the truth.
+			$adv    = $o && 'cod' !== $o->get_payment_method() && (float) $r->cod_amount > 0 ? max( 0, round( $total - $cod, 2 ) ) : 0;
 			$items  = array();
 			$cogs   = 0;
 			if ( $o ) {
@@ -149,4 +155,4 @@ class PG_PP_Test {
 	}
 
 }
-$r=PG_PP_Test::parcels('2026-10-01','2026-11-21','finished'); $rows=$r['rows']; $ex=array_slice(array_values(array_filter($rows,function($x){return $x['status']!=='transit';})),0,4); return ['sum'=>$r['sum'],'n'=>count($rows),'missing'=>$r['missing_cost'],'examples'=>$ex,'mismatch_examples'=>array_slice(array_values(array_filter($rows,function($x){return $x['note']==='collected_more'||$x['note']==='collected_less';})),0,4)];
+$r=PG_PP_Test2::parcels('2026-10-01','2026-11-21','finished'); $m=PG_PP_Test2::parcels('2026-11-01','2026-11-21','finished'); return ['oct_nov'=>$r['sum'],'nov'=>$m['sum']];
