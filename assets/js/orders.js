@@ -166,7 +166,7 @@
 		});
 		var r = R.ret;
 		if (!r) {
-			if (o.status === 'partial_delivered' && R.lines && R.lines.length) {
+			if (o.status === 'partial_delivered' && R.short && R.lines && R.lines.length) {
 				h += '<div class="pg-ret is-pending"><b>↩ আংশিক ডেলিভারি</b> — কোন আইটেম ফেরত আসছে এখনো বাছা হয়নি। <button class="pg-btn pg-btn-sm" data-act="ret-edit">ফেরত আইটেম বেছে দিন</button></div>';
 			}
 			return h;

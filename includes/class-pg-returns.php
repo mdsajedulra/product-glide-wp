@@ -80,7 +80,12 @@ class PG_Returns {
 			'exchanges'    => array(),
 			'lines'        => array(),
 			'ret'          => null,
+			'short'        => false,
 		);
+		if ( 'partial_delivered' === $o->get_status() && ! $r ) {
+			$c            = PG_Steadfast::active( $o->get_id() );
+			$out['short'] = ! $c || null === $c->cod_collected || (float) $c->cod_collected < (float) $c->cod_amount - 1;
+		}
 		foreach ( (array) $o->get_meta( '_pg_exchanges' ) as $xid ) {
 			$xo = $xid ? wc_get_order( $xid ) : null;
 			if ( $xo ) {
@@ -119,6 +124,9 @@ class PG_Returns {
 		$c         = PG_Steadfast::active( $order->get_id() );
 		$collected = $c && null !== $c->cod_collected ? (float) $c->cod_collected : null;
 		$guess     = self::guess( $order, $collected, $c ? (float) $c->cod_amount : null );
+		if ( 'nothing_missing' === $guess['note'] ) {
+			return; // full price collected: nothing is coming back
+		}
 		$order->update_meta_data(
 			self::META,
 			array(
@@ -163,6 +171,10 @@ class PG_Returns {
 			return array( 'items' => array(), 'note' => 'collected_unknown' );
 		}
 		$target = $collected + $advance - $shipping - $fees; // value of the kept items
+		if ( $target >= $all - 0.5 ) {
+			// The courier collected the full price: nothing came back (maybe only the delivery charge was cut).
+			return array( 'items' => array(), 'note' => 'nothing_missing' );
+		}
 		$best   = null;
 		if ( $n <= 14 ) {
 			for ( $mask = 0; $mask < ( 1 << $n ) - 1; $mask++ ) { // at least one unit returned
@@ -196,11 +208,7 @@ class PG_Returns {
 				$ret[ $units[ $b ][0] ] = ( $ret[ $units[ $b ][0] ] ?? 0 ) + 1;
 			}
 		}
-		$note = $best[0] > 5 ? 'no_exact_match' : '';
-		if ( $target >= $all - 0.5 ) {
-			$note = 'nothing_missing'; // collected covers everything: maybe only the delivery charge was cut
-		}
-		return array( 'items' => $ret, 'note' => $note );
+		return array( 'items' => $ret, 'note' => $best[0] > 5 ? 'no_exact_match' : '' );
 	}
 
 	/* ---------- actions ---------- */
