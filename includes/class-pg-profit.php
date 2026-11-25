@@ -300,8 +300,13 @@ class PG_Profit {
 				case 'partial':
 					$coll  = null === $coll ? 0 : $coll;
 					$rev   = $coll + $adv;
-					$share = $total > 0 ? min( 1, $rev / $total ) : 0;
-					$pc    = round( $cogs * $share, 2 ); // the rest of the books came back
+					$ret   = $o && class_exists( 'PG_Returns' ) ? PG_Returns::get( $o ) : null;
+					if ( $ret && 'received' === $ret['state'] ) {
+						$pc = $cogs; // returned items were refunded + restocked, so the cost is exact
+					} else {
+						$share = $total > 0 ? min( 1, $rev / $total ) : 0;
+						$pc    = round( $cogs * $share, 2 ); // the rest of the books came back
+					}
 					$note  = 'partial';
 					break;
 				case 'returned':

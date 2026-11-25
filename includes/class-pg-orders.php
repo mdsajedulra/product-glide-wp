@@ -19,6 +19,7 @@ class PG_Orders {
 			'courier_pending'   => __( 'Courier Pending', 'product-glide' ),
 			'completed'         => __( 'Delivered', 'product-glide' ),
 			'partial_delivered' => __( 'Partial', 'product-glide' ),
+			'returns'           => __( '↩ Returns to receive', 'product-glide' ),
 			'on-hold'           => __( 'On Hold', 'product-glide' ),
 			'cancelled'         => __( 'Cancelled', 'product-glide' ),
 		);
@@ -129,6 +130,7 @@ class PG_Orders {
 			'call_bucket'   => PG_Confirm::bucket( $order ),
 			'calls'         => PG_Confirm::calls_card( $order ),
 			'staff_notes'   => self::staff_notes( $order->get_id() ),
+			'returns'       => class_exists( 'PG_Returns' ) ? PG_Returns::card( $order ) : null,
 			'dup'           => null,
 		);
 		if ( null === $dup_rows ) {
@@ -226,6 +228,9 @@ class PG_Orders {
 			$total                    += $n;
 		}
 		$counts['all']  = $total;
+		if ( class_exists( 'PG_Returns' ) ) {
+			$counts['returns'] = count( PG_Returns::pending_ids() );
+		}
 		return $counts;
 	}
 
@@ -268,6 +273,11 @@ class PG_Orders {
 		} elseif ( in_array( $status, array( 'call', 'later', 'unreachable' ), true ) && '' === $q ) {
 			// Only the orders someone needs to call, most urgent first.
 			$all    = PG_Confirm::ids( $status );
+			$total  = count( $all );
+			$orders = array_filter( array_map( 'wc_get_order', array_slice( $all, ( $page - 1 ) * $per_page, $per_page ) ) );
+		} elseif ( 'returns' === $status && '' === $q && class_exists( 'PG_Returns' ) ) {
+			// Items still on their way back to the shop.
+			$all    = PG_Returns::pending_ids();
 			$total  = count( $all );
 			$orders = array_filter( array_map( 'wc_get_order', array_slice( $all, ( $page - 1 ) * $per_page, $per_page ) ) );
 		} elseif ( PG_Reschedule::STATUS === $status ) {

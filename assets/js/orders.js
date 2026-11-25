@@ -151,6 +151,166 @@
 			(c.message ? '<span class="pg-muted">' + esc(c.message) + '</span>' : '') + '</div>';
 	}
 
+	/* ---------- Returns (partial delivery / exchange) ---------- */
+
+	function bn(n) { return String(n).replace(/\d/g, function (d) { return '০১২৩৪৫৬৭৮৯'[d]; }); }
+	function returnsHtml(o) {
+		var R = o.returns;
+		if (!R) { return ''; }
+		var h = '';
+		if (R.exchange_of) {
+			h += '<div class="pg-ret pg-ret-x"><b>⇄ এক্সচেঞ্জ অর্ডার</b> — অর্ডার <a href="#" data-goto="' + R.exchange_of.id + '">#' + esc(R.exchange_of.number) + '</a>-এর ভুল আইটেমের বদলে যাচ্ছে। রাইডার ভুল আইটেমটা ফেরত আনবে।</div>';
+		}
+		(R.exchanges || []).forEach(function (x) {
+			h += '<div class="pg-ret pg-ret-x">⇄ এক্সচেঞ্জ পাঠানো হয়েছে: অর্ডার <a href="#" data-goto="' + x.id + '">#' + esc(x.number) + '</a> · ' + esc(x.status) + '</div>';
+		});
+		var r = R.ret;
+		if (!r) {
+			if (o.status === 'partial_delivered' && R.lines && R.lines.length) {
+				h += '<div class="pg-ret is-pending"><b>↩ আংশিক ডেলিভারি</b> — কোন আইটেম ফেরত আসছে এখনো বাছা হয়নি। <button class="pg-btn pg-btn-sm" data-act="ret-edit">ফেরত আইটেম বেছে দিন</button></div>';
+			}
+			return h;
+		}
+		var list = r.items.map(function (i) { return esc(i.name) + ' <b>×' + i.qty + '</b>'; }).join(', ');
+		if (r.state === 'pending') {
+			var title = r.source === 'exchange' ? '↩ এক্সচেঞ্জের ভুল আইটেম ফেরত আসছে' : '↩ আংশিক ডেলিভারি: এগুলো ফেরত আসছে';
+			var warn = '';
+			if (r.note === 'collected_unknown') { warn = 'কুরিয়ার কত টাকা তুলেছে এখনো জানা যায়নি, ফেরত আসা আইটেম নিজে বেছে দিন।'; }
+			else if (r.note === 'nothing_missing') { warn = 'তোলা টাকায় সব আইটেমের দাম উঠে গেছে, হয়তো শুধু ডেলিভারি চার্জ কম নিয়েছে। কিছু ফেরত না এলে "ফেরত আসবে না" চাপুন।'; }
+			else if (r.note === 'no_exact_match') { warn = 'তোলা টাকার সাথে কোনো আইটেমের দাম হুবহু মেলেনি, সবচেয়ে কাছেরটা ধরা হয়েছে। মিলিয়ে নিন।'; }
+			else if (r.guess) { warn = 'কুরিয়ারের তোলা টাকা আর বইয়ের দাম মিলিয়ে আন্দাজ করা হয়েছে। পার্সেল খুলে মিলিয়ে নিন।'; }
+			h += '<div class="pg-ret is-pending"><div><b>' + title + '</b></div>' +
+				'<div class="pg-ret-items">' + (list || '<span class="pg-muted">কোনো আইটেম বাছা হয়নি</span>') + '</div>' +
+				(warn ? '<div class="pg-ret-warn">' + warn + '</div>' : '') +
+				'<div class="pg-ret-acts"><button class="pg-btn pg-btn-sm pg-btn-primary" data-act="ret-receive" title="Items are in your hands: put them back in stock">✓ ফেরত বুঝে পেয়েছি</button>' +
+				'<button class="pg-btn pg-btn-sm" data-act="ret-edit">✎ আইটেম বদলান</button>' +
+				'<button class="pg-btn pg-btn-sm" data-act="ret-close" title="Nothing will come back (lost or kept)">ফেরত আসবে না</button></div></div>';
+		} else if (r.state === 'received') {
+			h += '<div class="pg-ret is-done">✓ ফেরত বুঝে পাওয়া গেছে, স্টকে যোগ হয়েছে: ' + list + (r.done ? ' <span class="pg-muted">· ' + esc(r.done) + '</span>' : '') + '</div>';
+		} else if (r.state === 'closed') {
+			h += '<div class="pg-ret is-done pg-muted">ফেরত আসেনি, স্টকে কিছু যোগ হয়নি।</div>';
+		}
+		return h;
+	}
+
+	function qtyRows(lines, pre) {
+		return lines.map(function (l) {
+			var v = pre[l.item_id] || 0;
+			return '<div class="pg-ret-row"><span>' + esc(l.name) + ' <span class="pg-muted">· ' + A.money(l.unit) + '</span></span>' +
+				'<span class="pg-ret-q"><button type="button" class="pg-btn pg-btn-sm" data-q="-1">−</button><input type="number" min="0" max="' + l.qty + '" value="' + v + '" data-item="' + l.item_id + '"><button type="button" class="pg-btn pg-btn-sm" data-q="1">+</button><span class="pg-muted">/ ' + l.qty + '</span></span></div>';
+		}).join('');
+	}
+	function bindQty(root, onChange) {
+		root.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-q]');
+			if (!b) { return; }
+			var inp = b.parentNode.querySelector('input');
+			inp.value = Math.max(0, Math.min(Number(inp.max), Number(inp.value || 0) + Number(b.getAttribute('data-q'))));
+			if (onChange) { onChange(); }
+		});
+		root.addEventListener('input', function () { if (onChange) { onChange(); } });
+	}
+	function readQty(root) {
+		var out = {}, any = false;
+		root.querySelectorAll('input[data-item]').forEach(function (i) {
+			var q = Math.max(0, Math.min(Number(i.max), parseInt(i.value || '0', 10)));
+			if (q > 0) { out[i.getAttribute('data-item')] = q; any = true; }
+		});
+		return any ? out : null;
+	}
+
+	function retItems(id, mode) {
+		var o = state.orders[id], R = o.returns, r = R.ret || { items: [], source: 'partial' }, pre = {};
+		r.items.forEach(function (i) { pre[i.item_id] = i.qty; });
+		var partial = r.source !== 'exchange';
+		var m = A.modal(mode === 'receive' ? 'ফেরত বুঝে পেয়েছেন?' : 'কোন আইটেম ফেরত আসছে?',
+			'<p class="pg-muted" style="margin:0 0 10px">' + (mode === 'receive'
+				? 'হাতে পাওয়া আইটেম আর সংখ্যা মিলিয়ে নিন। এগুলো স্টকে যোগ হবে' + (partial ? ', আর অর্ডারে এগুলোর দাম ফেরত (refund) হিসেবে লেখা হবে, কারণ কাস্টমার এগুলোর টাকা দেয়নি।' : '। টাকার কোনো হিসাব বদলাবে না, টাকা এক্সচেঞ্জ অর্ডারে গেছে।')
+				: 'পার্সেলে কোন আইটেম কয়টা ফেরত আসছে বেছে দিন।') + '</p>' +
+			'<div class="pg-ret-list">' + qtyRows(R.lines, pre) + '</div>' +
+			(mode === 'receive' && partial ? '<p class="pg-ret-sum" data-sum></p>' : '') +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>বাতিল</button><button class="pg-btn pg-btn-primary" data-go>' + (mode === 'receive' ? '✓ স্টকে যোগ করুন' : 'সেভ করুন') + '</button></div>', { center: true });
+		function sum() {
+			var el = m.body.querySelector('[data-sum]'); if (!el) { return; }
+			var q = readQty(m.body) || {}, t = 0, n = 0;
+			R.lines.forEach(function (l) { if (q[l.item_id]) { t += l.unit * q[l.item_id]; n += q[l.item_id]; } });
+			el.innerHTML = n ? 'স্টকে যোগ হবে <b>' + bn(n) + 'টা</b> · অর্ডারে ফেরত লেখা হবে <b>' + A.money(t) + '</b>' : '';
+		}
+		bindQty(m.body, sum); sum();
+		m.body.querySelector('[data-go]').addEventListener('click', function () {
+			var b = this, items = readQty(m.body);
+			if (!items) { A.toast('অন্তত একটা আইটেম বাছুন', 'bad'); return; }
+			A.busy(b, true);
+			A.ajax(mode === 'receive' ? 'pg_ret_receive' : 'pg_ret_save', { order_id: id, items: JSON.stringify(items) }).then(function (d) {
+				m.close(); replaceCard(d.order);
+				A.toast(mode === 'receive' ? 'স্টকে যোগ হয়েছে' : 'সেভ হয়েছে', 'ok');
+				A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {});
+			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
+		});
+	}
+
+	function retClose(id, el) {
+		var m = A.modal('ফেরত আসবে না?', '<p>এই অর্ডারের ফেরত তালিকা বন্ধ হবে, স্টকে কিছু যোগ হবে না। কুরিয়ার আইটেম হারিয়ে ফেললে বা কাস্টমার রেখে দিলে এটা চাপুন।</p>' +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>বাতিল</button><button class="pg-btn pg-btn-primary" data-go>হ্যাঁ, বন্ধ করুন</button></div>', { center: true });
+		m.body.querySelector('[data-go]').addEventListener('click', function () {
+			var b = this; A.busy(b, true);
+			A.ajax('pg_ret_close', { order_id: id }).then(function (d) { m.close(); replaceCard(d.order); A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {}); })
+				.catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
+		});
+	}
+
+	function exchange(id) {
+		var o = state.orders[id], R = o.returns, picked = [];
+		var m = A.modal('⇄ এক্সচেঞ্জ · অর্ডার #' + o.number,
+			'<div class="pg-ret-step"><b>১. রাইডার কোন আইটেম ফেরত আনবে?</b> <span class="pg-muted">(ভুল আইটেম)</span></div>' +
+			'<div class="pg-ret-list" data-back>' + qtyRows(R.lines, R.lines.length === 1 ? (function () { var p = {}; p[R.lines[0].item_id] = 1; return p; })() : {}) + '</div>' +
+			'<div class="pg-ret-step"><b>২. বদলে কী যাবে?</b></div>' +
+			'<input type="search" data-psearch placeholder="বইয়ের নাম লিখে খুঁজুন…" autocomplete="off" style="width:100%">' +
+			'<div class="pg-ret-results" data-results></div><div class="pg-ret-list" data-send></div>' +
+			'<div class="pg-ret-step"><b>৩. কাস্টমার কত টাকা দেবে?</b></div>' +
+			'<div class="pg-field" style="margin:0"><input type="number" min="0" step="1" value="0" data-cod><p class="pg-muted" style="margin:4px 0 0">আপনার ভুল হলে ৳০। দামের পার্থক্য বা ডেলিভারি চার্জ নিলে সেটা লিখুন, কুরিয়ার এটুকুই তুলবে।</p></div>' +
+			'<p class="pg-muted" style="margin:12px 0 0">একটা নতুন এক্সচেঞ্জ অর্ডার তৈরি হবে (Confirmed), স্বাভাবিক নিয়মে প্রিন্ট আর কুরিয়ারে যাবে। কুরিয়ারের নোটে লেখা থাকবে কোন আইটেম ফেরত আনতে হবে। নতুন আইটেম এখনই স্টক থেকে কমবে, ভুল আইটেম হাতে পেলে "ফেরত বুঝে পেয়েছি" চাপলে স্টকে যোগ হবে।</p>' +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>বাতিল</button><button class="pg-btn pg-btn-primary" data-go>এক্সচেঞ্জ অর্ডার তৈরি করুন</button></div>', { center: true });
+		bindQty(m.body.querySelector('[data-back]'));
+		var $res = m.body.querySelector('[data-results]'), $send = m.body.querySelector('[data-send]'), t = null;
+		function paintSend() {
+			$send.innerHTML = picked.map(function (p, i) {
+				return '<div class="pg-ret-row"><span>' + esc(p.name) + ' <span class="pg-muted">· ' + A.money(p.price) + (p.stock !== null ? ' · স্টকে ' + p.stock : '') + '</span></span>' +
+					'<span class="pg-ret-q"><input type="number" min="1" value="' + p.qty + '" data-sq="' + i + '"><button type="button" class="pg-btn pg-btn-sm" data-sdel="' + i + '">✕</button></span></div>';
+			}).join('');
+		}
+		m.body.querySelector('[data-psearch]').addEventListener('input', function () {
+			var q = this.value.trim(); clearTimeout(t);
+			if (q.length < 2) { $res.innerHTML = ''; return; }
+			t = setTimeout(function () {
+				A.ajax('pg_products_search', { q: q, per_page: 8 }).then(function (d) {
+					var items = (d.products || d.items || []);
+					$res.innerHTML = items.slice(0, 8).map(function (p) {
+						return '<button type="button" class="pg-ret-pick" data-pick=\'' + esc(JSON.stringify({ id: p.id, name: p.name, price: p.price, stock: p.stock })) + '\'>' + esc(p.name) + ' <span class="pg-muted">' + A.money(p.price) + (p.stock !== null ? ' · স্টকে ' + p.stock : '') + '</span></button>';
+					}).join('') || '<div class="pg-muted">কিছু পাওয়া যায়নি</div>';
+				});
+			}, 300);
+		});
+		m.body.addEventListener('click', function (e) {
+			var pk = e.target.closest('[data-pick]');
+			if (pk) { var p = JSON.parse(pk.getAttribute('data-pick')); p.qty = 1; picked.push(p); paintSend(); $res.innerHTML = ''; m.body.querySelector('[data-psearch]').value = ''; return; }
+			var dl = e.target.closest('[data-sdel]');
+			if (dl) { picked.splice(Number(dl.getAttribute('data-sdel')), 1); paintSend(); }
+		});
+		$send.addEventListener('input', function (e) { var i = e.target.getAttribute('data-sq'); if (i !== null) { picked[Number(i)].qty = Math.max(1, parseInt(e.target.value || '1', 10)); } });
+		m.body.querySelector('[data-go]').addEventListener('click', function () {
+			var b = this, back = readQty(m.body.querySelector('[data-back]'));
+			if (!back) { A.toast('কোন আইটেম ফেরত আনবে বেছে দিন', 'bad'); return; }
+			if (!picked.length) { A.toast('বদলে কোন আইটেম যাবে বেছে দিন', 'bad'); return; }
+			A.busy(b, true);
+			A.ajax('pg_ret_exchange', { order_id: id, items: JSON.stringify(back), send: JSON.stringify(picked.map(function (p) { return { id: p.id, qty: p.qty }; })), cod: m.body.querySelector('[data-cod]').value || 0 }).then(function (d) {
+				m.close(); replaceCard(d.order);
+				A.toast('এক্সচেঞ্জ অর্ডার #' + d.exchange.number + ' তৈরি হয়েছে (Confirmed ট্যাবে)', 'ok');
+				A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {});
+			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
+		});
+	}
+
 	/* ---------- Reschedule ---------- */
 
 	var NO_RESCHED = ['completed', 'cancelled', 'refunded', 'failed', 'partial_delivered'];
@@ -332,6 +492,7 @@
 					callWhyHtml(o) +
 					reschedHtml(o) +
 					courierHtml(o) +
+					returnsHtml(o) +
 					'<div class="pg-fraud" data-fraud>' + fraudHtml(o.fraud, o) + '</div>' +
 				'</div>' +
 			'</div>' +
@@ -346,6 +507,7 @@
 				'</span>' : '') +
 				sfBtn +
 				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="The customer gave a day to send it">&#128197; Customer\'s date</button>' : '') +
+				(o.returns && o.returns.can_exchange ? '<button class="pg-btn" data-act="exchange" title="Wrong item delivered? Send the right one and get the wrong one back">⇄ এক্সচেঞ্জ</button>' : '') +
 				'<button class="pg-btn" data-act="edit">Edit</button>' +
 				'<button class="pg-btn" data-act="more" aria-expanded="false">Notes ▾</button>' +
 				'<button class="pg-btn" data-act="jpg">Invoice JPG</button>' +
@@ -768,6 +930,16 @@
 		load();
 	});
 
+	// Links between an order and its exchange order: show that order.
+	document.addEventListener('click', function (e) {
+		var g = e.target.closest('[data-goto]');
+		if (!g) { return; }
+		e.preventDefault();
+		$q.value = g.textContent.replace('#', '').trim();
+		state.q = $q.value; state.page = 1;
+		load();
+	});
+
 	$q.addEventListener('input', A.debounce(function () {
 		state.q = $q.value.trim();
 		state.page = 1;
@@ -846,6 +1018,10 @@
 			case 'sf-void': sfVoid(id, el); break;
 			case 'sf-return': sfReturn(id); break;
 			case 'cb-exchange': cbExchange(id); break;
+			case 'exchange': exchange(id); break;
+			case 'ret-receive': retItems(id, 'receive'); break;
+			case 'ret-edit': retItems(id, 'save'); break;
+			case 'ret-close': retClose(id, el); break;
 			case 'sf-refresh':
 				A.busy(el, true);
 				A.ajax('pg_sf_refresh', { order_id: id }).then(function (d) { A.toast(d.message, 'ok'); replaceCard(d.order); refreshKpis(); })
