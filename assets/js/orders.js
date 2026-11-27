@@ -58,8 +58,11 @@
 
 	function renderTabs(counts) {
 		var html = '';
+		var keep = ['all', 'processing', 'confirmed', 'call'];
 		Object.keys(cfg.tabs).forEach(function (k) {
 			var c = counts && counts[k] !== undefined ? counts[k] : '';
+			// Fewer tabs: an empty tab is hidden (the main ones and the open one always stay).
+			if (counts && c === 0 && keep.indexOf(k) === -1 && k !== state.status) { return; }
 			html += '<button type="button" class="pg-status-tab' + (k === state.status ? ' is-active' : '') + (k === 'call' ? ' pg-tab-call' + (c ? ' has-items' : '') : '') + '" data-tab="' + esc(k) + '">' +
 				esc(cfg.tabs[k]) + (c !== '' ? '<span class="c">' + c + '</span>' : '') + '</button>';
 		});
@@ -533,14 +536,21 @@
 				'<div class="pg-order-main">' +
 					'<div class="pg-order-line1"><span class="pg-order-no">#' + esc(o.number) + '</span>' + statusPill(o.status, o.status_label) + confirmBadge(o) + dup +
 						'<span class="pg-order-date">' + esc(o.date) + '</span><span class="pg-order-total">' + A.money(o.total) + '</span></div>' +
-					'<div class="pg-cust"><div class="pg-cust-name">' + esc(o.name || '—') + ' <button class="pg-chipbtn pg-copyall" data-act="copyall" title="Name, phone, address and items in one go">📋 সব কপি</button></div>' +
+					'<div class="pg-cust"><div class="pg-cust-name">' + esc(o.name || '—') + '</div>' +
 						'<div class="pg-cust-row"><a class="pg-phone" href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' +
 							'<a class="pg-chipbtn call" href="tel:' + esc(phone) + '" aria-label="Call">Call</a>' +
-							'<button class="pg-chipbtn" data-copy="' + esc(phone) + '">Copy</button>' +
+
 							(o.wa ? waChip(o) : (waPhone ? '<a class="pg-chipbtn" href="https://wa.me/' + esc(waPhone) + '" target="_blank" rel="noopener">WhatsApp</a>' : '')) +
 							(o.alt_phone && o.alt_phone !== o.phone ? '<a class="pg-chipbtn" href="tel:' + esc(o.alt_phone) + '">Alt: ' + esc(o.alt_phone) + '</a>' : '') +
+							'<span class="pg-dd"><button type="button" class="pg-chipbtn pg-copybtn" data-dd aria-expanded="false">📋 কপি ▾</button>' +
+								'<span class="pg-menu" hidden>' +
+									'<button type="button" data-act="copyall"><b>সব একসাথে</b><small>নাম, ফোন, ঠিকানা, আইটেম</small></button>' +
+									'<button type="button" data-copy="' + esc(phone) + '">শুধু ফোন</button>' +
+									(o.address ? '<button type="button" data-copy="' + esc(o.address) + '">শুধু ঠিকানা</button>' : '') +
+									(o.name ? '<button type="button" data-copy="' + esc(o.name) + '">শুধু নাম</button>' : '') +
+								'</span></span>' +
 						'</div>' +
-						'<div class="pg-cust-addr">' + esc(o.address) + ' <button class="pg-chipbtn" data-copy="' + esc(o.address) + '">Copy address</button></div>' +
+						'<div class="pg-cust-addr">' + esc(o.address) + '</div>' +
 						addrBoth(o) +
 						infoHtml(o) +
 					'</div>' +
@@ -559,19 +569,24 @@
 					'<button class="pg-btn pg-btn-confirm" data-act="confirm" title="Customer confirmed on the phone">✓ Confirmed</button>' +
 					(o.call_bucket === 'unreachable'
 						? '<button class="pg-btn" data-act="call" data-out="reset" title="Put it back on the Call now list">↺ Try again</button>'
-						: '<button class="pg-btn pg-btn-callout" data-act="call" data-out="noans" title="Called, no answer — remind me to call again">📵 No answer</button>' +
-						  '<button class="pg-btn pg-btn-callout" data-act="call" data-out="off" title="Phone switched off — remind me to call again">📴 Off</button>' +
-						  '<button class="pg-btn pg-btn-callout" data-act="call" data-out="busy" title="Line busy — remind me to call again">⏰ Busy</button>') +
+						: '<button class="pg-btn pg-btn-callout" data-act="call" data-out="noans" title="Called, no answer — remind me to call again">📵 No answer</button>') +
 				'</span>' : '') +
 				sfBtn +
-				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="The customer gave a day to send it">&#128197; Customer\'s date</button>' : '') +
-				(o.returns && o.returns.can_exchange ? '<button class="pg-btn" data-act="exchange" title="Wrong item delivered? Send the right one and get the wrong one back">⇄ এক্সচেঞ্জ</button>' : '') +
-				(o.returns && o.returns.can_resend ? '<button class="pg-btn" data-act="resend" title="An item was left out of the parcel? Send it now without taking stock again">📦 বাদ পড়া আইটেম</button>' : '') +
 				'<button class="pg-btn" data-act="edit">Edit</button>' +
-				'<button class="pg-btn" data-act="more" aria-expanded="false">Notes ▾</button>' +
-				'<button class="pg-btn" data-act="jpg">Invoice JPG</button>' +
 				'<button class="pg-btn" data-act="print">Print</button>' +
-				(cfg.waReady ? '<button class="pg-btn" data-act="wa">Send WA</button>' : '') +
+				'<span class="pg-dd pg-dd-more"><button type="button" class="pg-btn" data-dd aria-expanded="false">⋯ আরও</button>' +
+					'<span class="pg-menu pg-menu-up" hidden>' +
+						(canConfirm(o) && o.call_bucket !== 'unreachable' ?
+							'<button type="button" data-act="call" data-out="off">📴 ফোন বন্ধ</button>' +
+							'<button type="button" data-act="call" data-out="busy">⏰ লাইন ব্যস্ত</button><hr>' : '') +
+						'<button type="button" data-act="more" aria-expanded="false">📝 নোট</button>' +
+						(cfg.waReady ? '<button type="button" data-act="wa">💬 WhatsApp মেসেজ পাঠান</button>' : '') +
+						'<button type="button" data-act="jpg">🖼 Invoice ছবি (JPG)</button>' +
+						(canReschedule(o) && !o.resched ? '<button type="button" data-act="rs-set">📅 কাস্টমারের দেওয়া তারিখ</button>' : '') +
+						(o.returns && (o.returns.can_exchange || o.returns.can_resend) ? '<hr>' : '') +
+						(o.returns && o.returns.can_exchange ? '<button type="button" data-act="exchange"><b>⇄ এক্সচেঞ্জ</b><small>ভুল বই গেছে, ফেরত আনতে হবে</small></button>' : '') +
+						(o.returns && o.returns.can_resend ? '<button type="button" data-act="resend"><b>📦 বাদ পড়া আইটেম</b><small>একটা বই পার্সেলে যায়নি</small></button>' : '') +
+					'</span></span>' +
 				'<select data-act="status" aria-label="Change status">' + statusOpts + '</select>' +
 			'</div>' +
 			'<div class="pg-order-more" hidden></div>' +
@@ -1048,6 +1063,26 @@
 				.catch(function (err) { A.toast(err.message, 'bad'); sel.value = prev; sel.disabled = false; });
 		}
 	});
+
+	// Small drop-down menus on the card (copy, more).
+	function closeMenus(except) {
+		document.querySelectorAll('.pg-dd .pg-menu:not([hidden])').forEach(function (m) {
+			if (m !== except) { m.hidden = true; m.parentNode.querySelector('[data-dd]').setAttribute('aria-expanded', 'false'); }
+		});
+	}
+	document.addEventListener('click', function (e) {
+		var t = e.target.closest('[data-dd]');
+		if (t) {
+			e.preventDefault();
+			var m = t.parentNode.querySelector('.pg-menu');
+			closeMenus(m);
+			m.hidden = !m.hidden;
+			t.setAttribute('aria-expanded', m.hidden ? 'false' : 'true');
+			return;
+		}
+		closeMenus(e.target.closest('.pg-menu') && !e.target.closest('.pg-menu button') ? e.target.closest('.pg-menu') : null);
+	});
+	document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeMenus(null); } });
 
 	$list.addEventListener('click', function (e) {
 		var el = e.target.closest('[data-act]');
