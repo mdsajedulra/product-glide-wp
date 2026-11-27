@@ -280,6 +280,9 @@ class PG_Profit {
 					$cogs   += $cost * $qty;
 					$items[] = $item->get_name() . ' ×' . $qty;
 				}
+				if ( $o->get_meta( '_pg_resend_nocogs' ) ) {
+					$cogs = 0; // missing item re-sent: its cost is already on the first parcel
+				}
 			}
 			$est    = null === $r->delivery_charge;
 			$charge = $est ? ( 'returned' === $kind ? $fr : ( 'voided' === $kind ? 0 : $fd ) ) : (float) $r->delivery_charge;

@@ -39,7 +39,7 @@ class PG_Returns {
 
 	public static function init() {
 		add_action( 'woocommerce_order_status_changed', array( __CLASS__, 'on_status' ), 30, 4 );
-		foreach ( array( 'save', 'receive', 'close', 'exchange' ) as $a ) {
+		foreach ( array( 'save', 'receive', 'close', 'exchange', 'resend' ) as $a ) {
 			add_action( 'wp_ajax_pg_ret_' . $a, array( __CLASS__, 'ajax_' . $a ) );
 		}
 	}
@@ -75,13 +75,28 @@ class PG_Returns {
 		$lines = self::lines( $o );
 		$ex    = $o->get_meta( '_pg_exchange_of' );
 		$out   = array(
-			'can_exchange' => (bool) $lines && ! $ex && ! ( $r && 'pending' === $r['state'] ) && in_array( $o->get_status(), array( 'completed', 'partial_delivered', 'courier_pending' ), true ),
+			'can_exchange' => (bool) $lines && ! $ex && ! $o->get_meta( '_pg_resend_of' ) && ! ( $r && 'pending' === $r['state'] ) && in_array( $o->get_status(), array( 'completed', 'partial_delivered', 'courier_pending' ), true ),
 			'exchange_of'  => $ex ? array( 'id' => (int) $ex, 'number' => ( $eo = wc_get_order( $ex ) ) ? $eo->get_order_number() : (string) $ex ) : null,
 			'exchanges'    => array(),
 			'lines'        => array(),
 			'ret'          => null,
 			'short'        => false,
+			'can_resend'   => false,
+			'resend_of'    => null,
+			'resends'      => array(),
 		);
+		$rs = $o->get_meta( '_pg_resend_of' );
+		if ( $rs ) {
+			$ro               = wc_get_order( $rs );
+			$out['resend_of'] = array( 'id' => (int) $rs, 'number' => $ro ? $ro->get_order_number() : (string) $rs );
+		}
+		$out['can_resend'] = (bool) $lines && ! $rs && ! $ex && in_array( $o->get_status(), array( 'completed', 'partial_delivered', 'courier_pending' ), true );
+		foreach ( (array) $o->get_meta( '_pg_resends' ) as $xid ) {
+			$xo = $xid ? wc_get_order( $xid ) : null;
+			if ( $xo ) {
+				$out['resends'][] = array( 'id' => $xo->get_id(), 'number' => $xo->get_order_number(), 'status' => PG_Helpers::status_label( $xo->get_status() ) );
+			}
+		}
 		if ( 'partial_delivered' === $o->get_status() && ! $r ) {
 			$c            = PG_Steadfast::active( $o->get_id() );
 			$out['short'] = ! $c || null === $c->cod_collected || (float) $c->cod_collected < (float) $c->cod_amount - 1;
@@ -360,26 +375,8 @@ class PG_Returns {
 
 	/* ---------- exchange ---------- */
 
-	public static function ajax_exchange() {
-		$o    = self::order_or_die();
-		$back = self::posted_items( $o ); // wrong items to collect
-		if ( ! $back ) {
-			wp_send_json_error( array( 'message' => __( 'Choose the item the rider must bring back.', 'product-glide' ) ) );
-		}
-		$send = isset( $_POST['send'] ) ? json_decode( wp_unslash( $_POST['send'] ), true ) : array(); // phpcs:ignore
-		$add  = array();
-		foreach ( (array) $send as $s ) {
-			$p = wc_get_product( absint( isset( $s['id'] ) ? $s['id'] : 0 ) );
-			$q = max( 1, absint( isset( $s['qty'] ) ? $s['qty'] : 1 ) );
-			if ( $p ) {
-				$add[] = array( $p, $q );
-			}
-		}
-		if ( ! $add ) {
-			wp_send_json_error( array( 'message' => __( 'Choose the item to send instead.', 'product-glide' ) ) );
-		}
-		$cod = max( 0, (float) PG_Helpers::post( 'cod', 0 ) );
-
+	/** A new COD order to the same customer, with a fee so the total = what the courier collects. */
+	private static function new_order_for( WC_Order $o, array $add, $cod, $fee_name ) {
 		$x = wc_create_order( array( 'created_via' => 'product-glide' ) );
 		if ( is_wp_error( $x ) ) {
 			wp_send_json_error( array( 'message' => $x->get_error_message() ) );
@@ -406,7 +403,7 @@ class PG_Returns {
 		$credit = round( $cod - $goods, 2 );
 		if ( abs( $credit ) >= 0.01 ) {
 			$fee = new WC_Order_Item_Fee();
-			$fee->set_name( sprintf( /* translators: %s: order number */ __( 'Exchange for order #%s', 'product-glide' ), $o->get_order_number() ) );
+			$fee->set_name( $fee_name );
 			$fee->set_amount( $credit );
 			$fee->set_total( $credit );
 			$fee->set_tax_status( 'none' );
@@ -415,6 +412,107 @@ class PG_Returns {
 		$x->set_payment_method( 'cod' );
 		$x->set_payment_method_title( __( 'Cash on delivery', 'product-glide' ) );
 		$x->calculate_totals( false );
+		return $x;
+	}
+
+	/** Mark an order confirmed by the team (it was made from the dashboard). */
+	private static function confirm( WC_Order $x, $note ) {
+		if ( wc_is_order_status( 'wc-confirmed' ) ) {
+			$x = wc_get_order( $x->get_id() );
+			$x->update_meta_data( '_pg_confirmed', 'call' );
+			$x->update_meta_data( '_pg_confirmed_at', time() );
+			$x->update_meta_data( '_pg_confirmed_by', get_current_user_id() );
+			$x->update_status( 'confirmed', $note );
+		}
+	}
+
+	/**
+	 * Packing mistake: an item of the order never went in the parcel. Send it now in a new parcel.
+	 * The item already left the stock with the first order, so the new order must not take it again.
+	 */
+	public static function ajax_resend() {
+		$o    = self::order_or_die();
+		$miss = self::posted_items( $o );
+		if ( ! $miss ) {
+			wp_send_json_error( array( 'message' => __( 'Choose the item that was missing from the parcel.', 'product-glide' ) ) );
+		}
+		$cod   = max( 0, (float) PG_Helpers::post( 'cod', 0 ) );
+		$add   = array();
+		$names = array();
+		foreach ( $miss as $id => $q ) {
+			$it = $o->get_item( $id );
+			$p  = $it ? $it->get_product() : null;
+			if ( ! $p ) {
+				wp_send_json_error( array( 'message' => __( 'This product no longer exists.', 'product-glide' ) ) );
+			}
+			$add[]   = array( $p, $q );
+			$names[] = $it->get_name() . ' ×' . $q;
+		}
+		$x = self::new_order_for( $o, $add, $cod, sprintf( /* translators: %s: order number */ __( 'Missing item of order #%s', 'product-glide' ), $o->get_order_number() ) );
+		$x->update_meta_data( '_pg_resend_of', $o->get_id() );
+		// Delivered in full = its cost is already counted on the first parcel. Paid only in part = the cost belongs here.
+		$x->update_meta_data( '_pg_resend_nocogs', 'completed' === $o->get_status() ? 1 : 0 );
+		$x->set_customer_note( sprintf( /* translators: 1: items, 2: order number */ __( 'MISSING ITEM of order #%2$s: deliver %1$s. Nothing to collect back.', 'product-glide' ), implode( ', ', $names ), $o->get_order_number() ) );
+		$x->save();
+		// Stock already went out with the first order: tell WooCommerce so it does not take it again.
+		$x->get_data_store()->set_stock_reduced( $x->get_id(), true );
+		$x = wc_get_order( $x->get_id() );
+		$x->update_status( 'processing', sprintf( __( 'Missing item of #%s, created from Product Glide (stock not reduced again).', 'product-glide' ), $o->get_order_number() ) );
+		self::confirm( $x, __( 'Missing item: confirmed by the team.', 'product-glide' ) );
+
+		$o    = wc_get_order( $o->get_id() );
+		$list = array_filter( (array) $o->get_meta( '_pg_resends' ) );
+		$list[] = $x->get_id();
+		$o->update_meta_data( '_pg_resends', array_values( $list ) );
+		// A partial delivery may list this item as "coming back": it is being sent now, not returned.
+		$r = self::get( $o );
+		if ( $r && 'pending' === $r['state'] ) {
+			foreach ( $miss as $id => $q ) {
+				if ( isset( $r['items'][ $id ] ) ) {
+					$r['items'][ $id ] -= $q;
+					if ( $r['items'][ $id ] <= 0 ) {
+						unset( $r['items'][ $id ] );
+					}
+				}
+			}
+			if ( ! $r['items'] ) {
+				$r['state']   = 'closed';
+				$r['done_at'] = time();
+				$r['done_by'] = get_current_user_id();
+			}
+			$o->update_meta_data( self::META, $r );
+		}
+		$o->save();
+		$o->add_order_note( sprintf( __( 'Missing item %1$s sent again in order #%2$s.', 'product-glide' ), implode( ', ', $names ), $x->get_order_number() ) );
+		wp_send_json_success(
+			array(
+				'order'  => PG_Orders::order_card_data( wc_get_order( $o->get_id() ) ),
+				'resend' => array( 'id' => $x->get_id(), 'number' => $x->get_order_number(), 'total' => (float) $x->get_total() ),
+			)
+		);
+	}
+
+	public static function ajax_exchange() {
+		$o    = self::order_or_die();
+		$back = self::posted_items( $o ); // wrong items to collect
+		if ( ! $back ) {
+			wp_send_json_error( array( 'message' => __( 'Choose the item the rider must bring back.', 'product-glide' ) ) );
+		}
+		$send = isset( $_POST['send'] ) ? json_decode( wp_unslash( $_POST['send'] ), true ) : array(); // phpcs:ignore
+		$add  = array();
+		foreach ( (array) $send as $s ) {
+			$p = wc_get_product( absint( isset( $s['id'] ) ? $s['id'] : 0 ) );
+			$q = max( 1, absint( isset( $s['qty'] ) ? $s['qty'] : 1 ) );
+			if ( $p ) {
+				$add[] = array( $p, $q );
+			}
+		}
+		if ( ! $add ) {
+			wp_send_json_error( array( 'message' => __( 'Choose the item to send instead.', 'product-glide' ) ) );
+		}
+		$cod = max( 0, (float) PG_Helpers::post( 'cod', 0 ) );
+
+		$x = self::new_order_for( $o, $add, $cod, sprintf( /* translators: %s: order number */ __( 'Exchange for order #%s', 'product-glide' ), $o->get_order_number() ) );
 		$names = array();
 		foreach ( $back as $id => $q ) {
 			$names[] = $o->get_item( $id )->get_name() . ' ×' . $q;

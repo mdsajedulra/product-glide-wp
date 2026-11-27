@@ -164,6 +164,12 @@
 		(R.exchanges || []).forEach(function (x) {
 			h += '<div class="pg-ret pg-ret-x">⇄ এক্সচেঞ্জ পাঠানো হয়েছে: অর্ডার <a href="#" data-goto="' + x.id + '">#' + esc(x.number) + '</a> · ' + esc(x.status) + '</div>';
 		});
+		if (R.resend_of) {
+			h += '<div class="pg-ret pg-ret-x"><b>📦 মিসিং আইটেম</b> — অর্ডার <a href="#" data-goto="' + R.resend_of.id + '">#' + esc(R.resend_of.number) + '</a>-এর প্যাকিংয়ে বাদ পড়া আইটেম যাচ্ছে। স্টক আগের অর্ডারেই কমেছে, আবার কমেনি।</div>';
+		}
+		(R.resends || []).forEach(function (x) {
+			h += '<div class="pg-ret pg-ret-x">📦 বাদ পড়া আইটেম আবার পাঠানো হয়েছে: অর্ডার <a href="#" data-goto="' + x.id + '">#' + esc(x.number) + '</a> · ' + esc(x.status) + '</div>';
+		});
 		var r = R.ret;
 		if (!r) {
 			if (o.status === 'partial_delivered' && R.short && R.lines && R.lines.length) {
@@ -306,6 +312,38 @@
 			A.ajax('pg_ret_exchange', { order_id: id, items: JSON.stringify(back), send: JSON.stringify(picked.map(function (p) { return { id: p.id, qty: p.qty }; })), cod: m.body.querySelector('[data-cod]').value || 0 }).then(function (d) {
 				m.close(); replaceCard(d.order);
 				A.toast('এক্সচেঞ্জ অর্ডার #' + d.exchange.number + ' তৈরি হয়েছে (Confirmed ট্যাবে)', 'ok');
+				A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {});
+			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
+		});
+	}
+
+	function resend(id) {
+		var o = state.orders[id], R = o.returns, paidFull = o.status === 'completed';
+		var m = A.modal('📦 বাদ পড়া আইটেম পাঠান · অর্ডার #' + o.number,
+			'<p class="pg-muted" style="margin:0 0 10px">প্যাকিংয়ের ভুলে যে আইটেম পার্সেলে যায়নি, সেটা নতুন পার্সেলে যাবে। স্টক আগের অর্ডারেই কমে গেছে, তাই আবার কমবে না।</p>' +
+			'<div class="pg-ret-step"><b>১. কোন আইটেম পার্সেলে যায়নি?</b></div>' +
+			'<div class="pg-ret-list" data-miss>' + qtyRows(R.lines, {}) + '</div>' +
+			'<div class="pg-ret-step"><b>২. কাস্টমার কত টাকা দেবে?</b></div>' +
+			'<div class="pg-field" style="margin:0"><input type="number" min="0" step="1" value="0" data-cod><p class="pg-muted" style="margin:4px 0 0" data-codhint></p></div>' +
+			'<div class="pg-form-actions"><button class="pg-btn" data-close>বাতিল</button><button class="pg-btn pg-btn-primary" data-go>নতুন পার্সেল তৈরি করুন</button></div>', { center: true });
+		var $cod = m.body.querySelector('[data-cod]'), touched = false;
+		m.body.querySelector('[data-codhint]').textContent = paidFull
+			? 'কাস্টমার আগেই পুরো টাকা দিয়েছে, তাই সাধারণত ৳০। ডেলিভারি চার্জ নিতে চাইলে সেটা লিখুন।'
+			: 'কাস্টমার এই আইটেমের টাকা এখনো দেয়নি, তাই এর দাম বসানো হয়েছে। দরকার হলে বদলান।';
+		$cod.addEventListener('input', function () { touched = true; });
+		bindQty(m.body.querySelector('[data-miss]'), function () {
+			if (paidFull || touched) { return; }
+			var q = readQty(m.body.querySelector('[data-miss]')) || {}, t = 0;
+			R.lines.forEach(function (l) { if (q[l.item_id]) { t += l.unit * q[l.item_id]; } });
+			$cod.value = Math.round(t);
+		});
+		m.body.querySelector('[data-go]').addEventListener('click', function () {
+			var b = this, miss = readQty(m.body.querySelector('[data-miss]'));
+			if (!miss) { A.toast('কোন আইটেম যায়নি বেছে দিন', 'bad'); return; }
+			A.busy(b, true);
+			A.ajax('pg_ret_resend', { order_id: id, items: JSON.stringify(miss), cod: $cod.value || 0 }).then(function (d) {
+				m.close(); replaceCard(d.order);
+				A.toast('নতুন পার্সেল অর্ডার #' + d.resend.number + ' তৈরি হয়েছে (Confirmed ট্যাবে)', 'ok');
 				A.ajax('pg_orders_counts', {}).then(renderTabs).catch(function () {});
 			}).catch(function (e) { A.toast(e.message, 'bad'); A.busy(b, false); });
 		});
@@ -508,6 +546,7 @@
 				sfBtn +
 				(canReschedule(o) && !o.resched ? '<button class="pg-btn" data-act="rs-set" title="The customer gave a day to send it">&#128197; Customer\'s date</button>' : '') +
 				(o.returns && o.returns.can_exchange ? '<button class="pg-btn" data-act="exchange" title="Wrong item delivered? Send the right one and get the wrong one back">⇄ এক্সচেঞ্জ</button>' : '') +
+				(o.returns && o.returns.can_resend ? '<button class="pg-btn" data-act="resend" title="An item was left out of the parcel? Send it now without taking stock again">📦 বাদ পড়া আইটেম</button>' : '') +
 				'<button class="pg-btn" data-act="edit">Edit</button>' +
 				'<button class="pg-btn" data-act="more" aria-expanded="false">Notes ▾</button>' +
 				'<button class="pg-btn" data-act="jpg">Invoice JPG</button>' +
@@ -1019,6 +1058,7 @@
 			case 'sf-return': sfReturn(id); break;
 			case 'cb-exchange': cbExchange(id); break;
 			case 'exchange': exchange(id); break;
+			case 'resend': resend(id); break;
 			case 'ret-receive': retItems(id, 'receive'); break;
 			case 'ret-edit': retItems(id, 'save'); break;
 			case 'ret-close': retClose(id, el); break;
