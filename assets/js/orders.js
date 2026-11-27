@@ -151,6 +151,26 @@
 			(c.message ? '<span class="pg-muted">' + esc(c.message) + '</span>' : '') + '</div>';
 	}
 
+	/* ---------- Copy everything in one go ---------- */
+
+	function copyAllText(o) {
+		var L = ['অর্ডার #' + o.number];
+		if (o.name) { L.push('নাম: ' + o.name); }
+		if (o.phone) { L.push('ফোন: ' + o.phone + (o.alt_phone && o.alt_phone !== o.phone ? ', ' + o.alt_phone : '')); }
+		if (o.address) { L.push('ঠিকানা: ' + o.address); }
+		L.push('');
+		L.push('আইটেম:');
+		(o.items || []).forEach(function (it, i) {
+			L.push((i + 1) + '. ' + it.name + ' × ' + it.qty + ' = ' + A.money(it.total));
+		});
+		if (o.discount) { L.push('ডিসকাউন্ট: -' + A.money(o.discount)); }
+		if (o.shipping) { L.push('ডেলিভারি চার্জ: ' + A.money(o.shipping)); }
+		L.push('মোট: ' + A.money(o.total));
+		if (o.cod != null && Math.abs(Number(o.cod) - Number(o.total)) >= 1) { L.push('কুরিয়ারে তুলবে: ' + A.money(o.cod)); }
+		if (o.customer_note) { L.push(''); L.push('নোট: ' + o.customer_note); }
+		return L.join('\n');
+	}
+
 	/* ---------- Returns (partial delivery / exchange) ---------- */
 
 	function bn(n) { return String(n).replace(/\d/g, function (d) { return '০১২৩৪৫৬৭৮৯'[d]; }); }
@@ -513,7 +533,7 @@
 				'<div class="pg-order-main">' +
 					'<div class="pg-order-line1"><span class="pg-order-no">#' + esc(o.number) + '</span>' + statusPill(o.status, o.status_label) + confirmBadge(o) + dup +
 						'<span class="pg-order-date">' + esc(o.date) + '</span><span class="pg-order-total">' + A.money(o.total) + '</span></div>' +
-					'<div class="pg-cust"><div class="pg-cust-name">' + esc(o.name || '—') + '</div>' +
+					'<div class="pg-cust"><div class="pg-cust-name">' + esc(o.name || '—') + ' <button class="pg-chipbtn pg-copyall" data-act="copyall" title="Name, phone, address and items in one go">📋 সব কপি</button></div>' +
 						'<div class="pg-cust-row"><a class="pg-phone" href="tel:' + esc(phone) + '">' + esc(phone) + '</a>' +
 							'<a class="pg-chipbtn call" href="tel:' + esc(phone) + '" aria-label="Call">Call</a>' +
 							'<button class="pg-chipbtn" data-copy="' + esc(phone) + '">Copy</button>' +
@@ -1059,6 +1079,7 @@
 			case 'cb-exchange': cbExchange(id); break;
 			case 'exchange': exchange(id); break;
 			case 'resend': resend(id); break;
+			case 'copyall': A.copy(copyAllText(o)); break;
 			case 'ret-receive': retItems(id, 'receive'); break;
 			case 'ret-edit': retItems(id, 'save'); break;
 			case 'ret-close': retClose(id, el); break;
